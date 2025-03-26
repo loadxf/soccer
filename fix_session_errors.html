@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soccer Prediction System - Advanced Session Fix</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f7f9fc;
+        }
+        h1, h2 {
+            color: #1a3d66;
+        }
+        .container {
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: 500;
+        }
+        button:hover {
+            background-color: #155db1;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #f1f1f1;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 30px;
+            background-color: #4CAF50;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+            border-radius: 5px;
+            transition: width 0.5s;
+        }
+        .manual-steps {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-left: 4px solid #ffc107;
+            margin: 10px 0;
+        }
+        .advanced-container {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .tab {
+            padding: 8px 15px;
+            cursor: pointer;
+            background-color: #f1f1f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+        .tab-content {
+            display: none;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 0 0 5px 5px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        code {
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .port-settings {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .port-settings label {
+            margin-right: 10px;
+        }
+        .port-settings input {
+            width: 80px;
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Soccer Prediction System - Advanced Session Fix</h1>
+    <div class="container">
+        <h2>Fixing "SessionInfo not initialized" Error</h2>
+        <p>This specialized tool addresses the persistent <code>"Tried to use SessionInfo before it was initialized"</code> error by using more aggressive browser storage clearing techniques.</p>
+        
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar">0%</div>
+        </div>
+        
+        <div class="status" id="status">Ready to start advanced cleanup...</div>
+        
+        <div class="port-settings">
+            <label for="portInput">Streamlit Port:</label>
+            <input type="number" id="portInput" value="8501" min="1" max="65535">
+        </div>
+        
+        <button id="startDeepClean">Start Deep Clean</button>
+        <button id="manualRedirect">Skip to Application</button>
+    </div>
+    
+    <div class="container">
+        <div class="tabs">
+            <div class="tab active" data-tab="basicTab">Basic Fixes</div>
+            <div class="tab" data-tab="advancedTab">Advanced Options</div>
+            <div class="tab" data-tab="debugTab">Debug Tools</div>
+        </div>
+        
+        <div class="tab-content active" id="basicTab">
+            <h3>Quick Fixes</h3>
+            <p>Try these methods first:</p>
+            <ol>
+                <li>Click the "Start Deep Clean" button above</li>
+                <li>Use incognito/private browsing mode</li>
+                <li>Try a different browser</li>
+                <li>Use <code>127.0.0.1</code> instead of <code>localhost</code> in the URL</li>
+            </ol>
+            
+            <div class="manual-steps">
+                <strong>Alternative URL Formats:</strong>
+                <ul>
+                    <li><a href="http://127.0.0.1:8501" target="_blank">http://127.0.0.1:8501</a> (direct IP address)</li>
+                    <li><a href="http://127.0.0.1:8501?force_reset=true" target="_blank">http://127.0.0.1:8501?force_reset=true</a> (with reset)</li>
+                    <li><a href="http://localhost:8501" target="_blank">http://localhost:8501</a> (localhost)</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="tab-content" id="advancedTab">
+            <h3>Advanced Options</h3>
+            
+            <div class="advanced-container">
+                <strong>Warning:</strong> These options are more invasive and will delete browser data beyond just the Streamlit app.
+            </div>
+            
+            <button id="clearCookies">Clear All Cookies</button>
+            <button id="clearAllStorage">Clear All Site Storage</button>
+            <button id="clearServiceWorkers">Unregister All Service Workers</button>
+            <button id="resetHardwareAcceleration">Reset Hardware Acceleration</button>
+            
+            <h4>Browser-Specific Tips</h4>
+            <div class="manual-steps">
+                <strong>Chrome:</strong>
+                <ol>
+                    <li>Open Chrome DevTools (F12 or Ctrl+Shift+I)</li>
+                    <li>Go to Application tab</li>
+                    <li>Select "Clear storage" on the left</li>
+                    <li>Check all boxes and click "Clear site data"</li>
+                    <li>Try disabling hardware acceleration: chrome://settings/system</li>
+                </ol>
+            </div>
+            
+            <div class="manual-steps">
+                <strong>Firefox:</strong>
+                <ol>
+                    <li>Go to about:config and set these values:</li>
+                    <li>privacy.firstparty.isolate = true</li>
+                    <li>privacy.resistFingerprinting = true</li>
+                    <li>privacy.trackingprotection.fingerprinting.enabled = true</li>
+                </ol>
+            </div>
+            
+            <div class="manual-steps">
+                <strong>Edge:</strong>
+                <ol>
+                    <li>Settings > Site permissions > Cookies and site data > See all cookies and site data</li>
+                    <li>Search for "streamlit" and remove all related entries</li>
+                    <li>Try edge://settings/system and toggle hardware acceleration</li>
+                </ol>
+            </div>
+        </div>
+        
+        <div class="tab-content" id="debugTab">
+            <h3>Debug Information</h3>
+            
+            <button id="collectDebugInfo">Collect Debug Info</button>
+            <div class="status" id="debugInfo">Click the button to collect debug information</div>
+            
+            <h4>System Info</h4>
+            <div id="systemInfo"></div>
+            
+            <h4>Test Direct WebSocket Connection</h4>
+            <button id="testWebsocket">Test WebSocket Connection</button>
+            <div class="status" id="websocketResult">Not tested yet</div>
+            
+            <h4>Test Streamlit Static Assets</h4>
+            <button id="testStaticAssets">Test Static Assets</button>
+            <div class="status" id="staticResult">Not tested yet</div>
+        </div>
+    </div>
+    
+    <script>
+        // UI Elements
+        const progressBar = document.getElementById('progressBar');
+        const statusText = document.getElementById('status');
+        const startButton = document.getElementById('startDeepClean');
+        const skipButton = document.getElementById('manualRedirect');
+        const portInput = document.getElementById('portInput');
+        
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabId = tab.getAttribute('data-tab');
+                
+                // Update active tab
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Show active content
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+        
+        // Get the streamlit port from input
+        function getStreamlitPort() {
+            const port = parseInt(portInput.value);
+            return isNaN(port) ? 8501 : port;
+        }
+        
+        // Generate app URL with force_reset parameter
+        function getAppUrl() {
+            const port = getStreamlitPort();
+            const timestamp = Date.now();
+            // Use 127.0.0.1 instead of localhost
+            return `http://127.0.0.1:${port}?force_reset=true&ts=${timestamp}`;
+        }
+        
+        // Listen for button clicks
+        startButton.addEventListener('click', startDeepClean);
+        skipButton.addEventListener('click', () => {
+            window.location.href = getAppUrl();
+        });
+        
+        // Debug tools
+        document.getElementById('collectDebugInfo').addEventListener('click', collectDebugInfo);
+        document.getElementById('testWebsocket').addEventListener('click', testWebsocket);
+        document.getElementById('testStaticAssets').addEventListener('click', testStaticAssets);
+        
+        // Advanced options
+        document.getElementById('clearCookies').addEventListener('click', clearAllCookies);
+        document.getElementById('clearAllStorage').addEventListener('click', clearAllSiteStorage);
+        document.getElementById('clearServiceWorkers').addEventListener('click', unregisterAllServiceWorkers);
+        document.getElementById('resetHardwareAcceleration').addEventListener('click', resetHardwareAcceleration);
+        
+        // Deep clean function - more aggressive than the regular reset
+        async function startDeepClean() {
+            startButton.disabled = true;
+            updateStatus('Starting deep cleanup process...', 5);
+            
+            try {
+                // 1. Clear localStorage 
+                updateStatus('Clearing localStorage...', 10);
+                localStorage.clear();
+                
+                // 2. Clear sessionStorage
+                updateStatus('Clearing sessionStorage...', 15);
+                sessionStorage.clear();
+                
+                // 3. Clear cookies for all domains
+                updateStatus('Clearing cookies...', 20);
+                await clearAllCookies();
+                
+                // 4. Clear IndexedDB
+                updateStatus('Clearing IndexedDB databases...', 30);
+                await clearAllIndexedDBs();
+                
+                // 5. Clear Cache Storage
+                updateStatus('Clearing cache storage...', 40);
+                await clearAllCaches();
+                
+                // 6. Unregister service workers
+                updateStatus('Unregistering service workers...', 50);
+                await unregisterAllServiceWorkers();
+                
+                // 7. Clear Application Cache (deprecated but might be present)
+                updateStatus('Clearing application cache...', 60);
+                await clearApplicationCache();
+                
+                // 8. Reset Streamlit-specific storage
+                updateStatus('Clearing Streamlit-specific storage...', 70);
+                await clearStreamlitStorage();
+                
+                // 9. Test connection to Streamlit server
+                updateStatus('Testing connection to Streamlit server...', 80);
+                await testStreamlitConnection();
+                
+                // 10. Reset browser connection state
+                updateStatus('Resetting browser connection state...', 90);
+                await resetConnectionState();
+                
+                // Success! Add small delay for user to see 100%
+                updateStatus('✅ Deep cleanup completed successfully!', 100);
+                
+                // Set success style
+                statusText.className = 'status success';
+                
+                // Wait 2 seconds then redirect
+                setTimeout(() => {
+                    updateStatus('Redirecting to application with clean state...', 100);
+                    window.location.href = getAppUrl();
+                }, 2000);
+                
+            } catch (error) {
+                // Show error and enable restart
+                console.error('Deep clean error:', error);
+                updateStatus(`❌ Error during cleanup: ${error.message}. See console for details.`, 0);
+                statusText.className = 'status error';
+                startButton.disabled = false;
+            }
+        }
+        
+        // Helper functions
+        function updateStatus(message, progress) {
+            statusText.textContent = message;
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${progress}%`;
+        }
+        
+        // More thorough cookie clearing that handles all domains
+        async function clearAllCookies() {
+            return new Promise((resolve) => {
+                try {
+                    // First approach - standard clear
+                    const cookies = document.cookie.split(";");
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i];
+                        const eqPos = cookie.indexOf("=");
+                        const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+                        // Try to clear for all possible paths and domains
+                        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=localhost";
+                        document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=127.0.0.1";
+                    }
+                    
+                    // Second approach - try different paths
+                    for (const path of ['/', '/app', '/static', '/stream', '/api']) {
+                        for (let i = 0; i < cookies.length; i++) {
+                            const cookie = cookies[i];
+                            const eqPos = cookie.indexOf("=");
+                            const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                            document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=" + path;
+                        }
+                    }
+                    statusText.textContent = "Cookies cleared successfully";
+                } catch (e) {
+                    console.error("Error clearing cookies:", e);
+                    statusText.textContent = "Error clearing cookies: " + e.message;
+                }
+                resolve();
+            });
+        }
+        
+        // Clear all IndexedDB databases
+        async function clearAllIndexedDBs() {
+            return new Promise((resolve) => {
+                try {
+                    const deleteDBRequests = [];
+                    
+                    // Try to enumerate and delete databases if supported
+                    if ('indexedDB' in window) {
+                        if (indexedDB.databases) {
+                            indexedDB.databases().then((dbs) => {
+                                dbs.forEach((db) => {
+                                    console.log("Deleting IndexedDB:", db.name);
+                                    const deleteRequest = indexedDB.deleteDatabase(db.name);
+                                    deleteDBRequests.push(new Promise((resolveDel) => {
+                                        deleteRequest.onsuccess = resolveDel;
+                                        deleteRequest.onerror = resolveDel;
+                                    }));
+                                });
+                                
+                                Promise.all(deleteDBRequests).then(() => {
+                                    resolve();
+                                });
+                            }).catch(() => {
+                                // Fallback - try to delete common names
+                                deleteKnownDatabases().then(resolve);
+                            });
+                        } else {
+                            // Browsers that don't support indexedDB.databases()
+                            deleteKnownDatabases().then(resolve);
+                        }
+                    } else {
+                        resolve();
+                    }
+                } catch (e) {
+                    console.error("Error clearing IndexedDB:", e);
+                    resolve();
+                }
+            });
+        }
+        
+        // Delete known database names
+        async function deleteKnownDatabases() {
+            const knownDBs = [
+                'streamlit', 'streamlit-data', 'streamlit-cache',
+                'localforage', 'keyval-store',
+                'firebaseLocalStorageDb', 'CacheStorage'
+            ];
+            
+            const deletePromises = knownDBs.map(dbName => {
+                return new Promise(resolve => {
+                    try {
+                        const deleteRequest = indexedDB.deleteDatabase(dbName);
+                        deleteRequest.onsuccess = resolve;
+                        deleteRequest.onerror = resolve;
+                    } catch (e) {
+                        resolve();
+                    }
+                });
+            });
+            
+            return Promise.all(deletePromises);
+        }
+        
+        // Clear all caches
+        async function clearAllCaches() {
+            if ('caches' in window) {
+                try {
+                    const keys = await caches.keys();
+                    return Promise.all(keys.map(key => caches.delete(key)));
+                } catch (e) {
+                    console.warn('Cache API clear failed:', e);
+                }
+            }
+            return Promise.resolve();
+        }
+        
+        // Unregister all service workers
+        async function unregisterAllServiceWorkers() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    return Promise.all(registrations.map(r => r.unregister()));
+                } catch (e) {
+                    console.warn('Service worker unregister failed:', e);
+                }
+            }
+            return Promise.resolve();
+        }
+        
+        // Clear Application Cache (deprecated but might be present)
+        async function clearApplicationCache() {
+            return new Promise((resolve) => {
+                if (window.applicationCache) {
+                    try {
+                        window.applicationCache.abort();
+                        window.applicationCache.swapCache();
+                    } catch (e) {
+                        console.warn('Application Cache clear failed:', e);
+                    }
+                }
+                resolve();
+            });
+        }
+        
+        // Clear Streamlit-specific storage
+        async function clearStreamlitStorage() {
+            return new Promise((resolve) => {
+                try {
+                    // Clear any localStorage items that might be related to Streamlit
+                    Object.keys(localStorage).forEach(key => {
+                        if (key.toLowerCase().includes('streamlit') || 
+                            key.toLowerCase().includes('stlite') ||
+                            key.toLowerCase().includes('session') ||
+                            key.toLowerCase().includes('stlite')) {
+                            localStorage.removeItem(key);
+                        }
+                    });
+                    
+                    // Clear specific known localStorage keys
+                    const streamlitKeys = [
+                        'st_pages', 'st_last_time', 'st_session_id',
+                        'stSessionState', 'stSessionOptions', 'stActiveTheme',
+                        'StreamlitApp'
+                    ];
+                    
+                    streamlitKeys.forEach(key => {
+                        localStorage.removeItem(key);
+                    });
+                } catch (e) {
+                    console.warn('Streamlit storage clear failed:', e);
+                }
+                resolve();
+            });
+        }
+        
+        // Test connection to Streamlit server
+        async function testStreamlitConnection() {
+            const port = getStreamlitPort();
+            
+            try {
+                // First test HTTP connection
+                const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+                    method: 'GET',
+                    mode: 'no-cors', // This allows us to at least check if the server is running
+                    cache: 'no-cache'
+                });
+                
+                console.log("Server responded with status:", response.status);
+                
+                return true;
+            } catch (e) {
+                console.warn('Streamlit server check failed:', e);
+                return false;
+            }
+        }
+        
+        // Reset connection state
+        async function resetConnectionState() {
+            return new Promise((resolve) => {
+                // Generate a fresh session ID
+                const freshSessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+                
+                // Store it for the next page load
+                try {
+                    localStorage.setItem('streamlit_fresh_session', freshSessionId);
+                } catch (e) {
+                    console.warn('Failed to store fresh session ID:', e);
+                }
+                
+                resolve();
+            });
+        }
+        
+        // Clear all site storage
+        async function clearAllSiteStorage() {
+            try {
+                if (navigator.storage && navigator.storage.estimate) {
+                    const estimate = await navigator.storage.estimate();
+                    console.log(`Storage usage: ${estimate.usage} bytes out of ${estimate.quota} bytes`);
+                }
+                
+                if (navigator.storage && navigator.storage.clear) {
+                    await navigator.storage.clear();
+                    statusText.textContent = "All site storage cleared successfully";
+                    statusText.className = 'status success';
+                } else {
+                    // Fallback with individual clearing
+                    await Promise.all([
+                        clearAllCookies(),
+                        clearAllIndexedDBs(),
+                        clearAllCaches(),
+                        clearApplicationCache(),
+                        clearStreamlitStorage()
+                    ]);
+                    localStorage.clear();
+                    sessionStorage.clear();
+                    
+                    statusText.textContent = "Storage cleared using fallback methods";
+                    statusText.className = 'status success';
+                }
+            } catch (e) {
+                console.error("Error clearing all storage:", e);
+                statusText.textContent = "Error clearing storage: " + e.message;
+                statusText.className = 'status error';
+            }
+        }
+        
+        // Reset hardware acceleration settings
+        function resetHardwareAcceleration() {
+            statusText.textContent = "Opening browser settings pages...";
+            
+            // Try to open browser-specific settings pages
+            try {
+                window.open('chrome://settings/system', '_blank');
+            } catch (e) {}
+            
+            try {
+                window.open('about:preferences#general', '_blank');
+            } catch (e) {}
+            
+            try {
+                window.open('edge://settings/system', '_blank');
+            } catch (e) {}
+            
+            statusText.textContent = "Please disable hardware acceleration in your browser settings";
+            statusText.className = 'status success';
+        }
+        
+        // Debug tools
+        function collectDebugInfo() {
+            const debugInfo = document.getElementById('debugInfo');
+            const systemInfo = document.getElementById('systemInfo');
+            
+            try {
+                // Collect browser information
+                const browserInfo = {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    vendor: navigator.vendor,
+                    language: navigator.language,
+                    cookiesEnabled: navigator.cookieEnabled,
+                    doNotTrack: navigator.doNotTrack,
+                    screenWidth: window.screen.width,
+                    screenHeight: window.screen.height,
+                    windowInnerWidth: window.innerWidth,
+                    windowInnerHeight: window.innerHeight,
+                    devicePixelRatio: window.devicePixelRatio,
+                    localStorageAvailable: !!window.localStorage,
+                    sessionStorageAvailable: !!window.sessionStorage,
+                    indexedDBAvailable: !!window.indexedDB
+                };
+                
+                // Display information
+                systemInfo.innerHTML = `<pre>${JSON.stringify(browserInfo, null, 2)}</pre>`;
+                debugInfo.textContent = "Debug information collected successfully";
+                debugInfo.className = 'status success';
+            } catch (e) {
+                debugInfo.textContent = "Error collecting debug info: " + e.message;
+                debugInfo.className = 'status error';
+            }
+        }
+        
+        // Test WebSocket connection
+        function testWebsocket() {
+            const port = getStreamlitPort();
+            const wsResult = document.getElementById('websocketResult');
+            
+            try {
+                wsResult.textContent = "Testing WebSocket connection...";
+                wsResult.className = 'status';
+                
+                // Try to establish a WebSocket connection
+                const ws = new WebSocket(`ws://127.0.0.1:${port}/stream`);
+                
+                ws.onopen = function() {
+                    wsResult.textContent = "WebSocket connection successful!";
+                    wsResult.className = 'status success';
+                    ws.close();
+                };
+                
+                ws.onerror = function(error) {
+                    wsResult.textContent = "WebSocket connection failed: " + error.message;
+                    wsResult.className = 'status error';
+                };
+                
+                // Timeout after 5 seconds
+                setTimeout(() => {
+                    if (ws.readyState !== WebSocket.OPEN && ws.readyState !== WebSocket.CLOSED) {
+                        ws.close();
+                        wsResult.textContent = "WebSocket connection timed out";
+                        wsResult.className = 'status error';
+                    }
+                }, 5000);
+            } catch (e) {
+                wsResult.textContent = "Error testing WebSocket: " + e.message;
+                wsResult.className = 'status error';
+            }
+        }
+        
+        // Test static assets
+        function testStaticAssets() {
+            const port = getStreamlitPort();
+            const staticResult = document.getElementById('staticResult');
+            
+            staticResult.textContent = "Testing static assets...";
+            staticResult.className = 'status';
+            
+            // Try to fetch a static asset
+            fetch(`http://127.0.0.1:${port}/favicon.png`, { cache: 'no-store' })
+                .then(response => {
+                    if (response.ok) {
+                        staticResult.textContent = "Static assets accessible!";
+                        staticResult.className = 'status success';
+                    } else {
+                        staticResult.textContent = "Static assets request failed: " + response.status;
+                        staticResult.className = 'status error';
+                    }
+                })
+                .catch(error => {
+                    staticResult.textContent = "Error fetching static assets: " + error.message;
+                    staticResult.className = 'status error';
+                });
+        }
+        
+        // Initialize with system info
+        window.addEventListener('load', () => {
+            collectDebugInfo();
+        });
+    </script>
+</body>
+</html> 

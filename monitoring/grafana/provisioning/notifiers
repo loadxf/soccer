@@ -1,0 +1,2 @@
+# This directory is needed for Grafana to store notification channel configurations
+# It can remain empty initially 

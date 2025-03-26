@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soccer Prediction System - Reset Browser Cache</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f7f9fc;
+        }
+        h1, h2 {
+            color: #1a3d66;
+        }
+        .container {
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: 500;
+        }
+        button:hover {
+            background-color: #155db1;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .progress-container {
+            width: 100%;
+            background-color: #f1f1f1;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 30px;
+            background-color: #4CAF50;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+            border-radius: 5px;
+            transition: width 0.5s;
+        }
+        .manual-steps {
+            background-color: #fff3cd;
+            padding: 10px;
+            border-left: 4px solid #ffc107;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Soccer Prediction System - Cache Reset Tool</h1>
+    <div class="container">
+        <h2>Fixing Browser Cache Issues</h2>
+        <p>This tool will help resolve the <code>"Tried to use SessionInfo before it was initialized"</code> error by clearing your browser's cache and storage data for the Streamlit application.</p>
+        
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar">0%</div>
+        </div>
+        
+        <div class="status" id="status">Ready to start cleanup...</div>
+        
+        <button id="startReset">Start Automatic Reset</button>
+        <button id="manualRedirect">Skip to Application</button>
+    </div>
+    
+    <div class="container">
+        <h2>Manual Cleanup Steps</h2>
+        <p>If the automatic reset doesn't resolve the issue, try these manual steps:</p>
+        
+        <div class="manual-steps">
+            <strong>Chrome:</strong>
+            <ol>
+                <li>Open Chrome DevTools (F12 or Ctrl+Shift+I)</li>
+                <li>Go to Application tab</li>
+                <li>Select "Clear storage" on the left</li>
+                <li>Check all boxes and click "Clear site data"</li>
+                <li>Try a hard refresh (Ctrl+F5)</li>
+            </ol>
+        </div>
+        
+        <div class="manual-steps">
+            <strong>Firefox:</strong>
+            <ol>
+                <li>Press Ctrl+Shift+Delete</li>
+                <li>Select "Cookies and Site Data" and "Cached Web Content"</li>
+                <li>Set time range to "Everything"</li>
+                <li>Click "Clear Now"</li>
+            </ol>
+        </div>
+        
+        <div class="manual-steps">
+            <strong>Edge:</strong>
+            <ol>
+                <li>Press Ctrl+Shift+Delete</li>
+                <li>Select "Cookies and other site data" and "Cached images and files"</li>
+                <li>Click "Clear now"</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        // UI Elements
+        const progressBar = document.getElementById('progressBar');
+        const statusText = document.getElementById('status');
+        const startButton = document.getElementById('startReset');
+        const skipButton = document.getElementById('manualRedirect');
+        
+        // App URL with force_reset parameter
+        const appUrl = 'http://localhost:8501?force_reset=true';
+        
+        // Listen for button clicks
+        startButton.addEventListener('click', startReset);
+        skipButton.addEventListener('click', () => {
+            window.location.href = appUrl;
+        });
+        
+        // Reset function - clears browser caches and storage
+        async function startReset() {
+            startButton.disabled = true;
+            updateStatus('Starting cleanup process...', 10);
+            
+            try {
+                // 1. Clear localStorage
+                updateStatus('Clearing localStorage...', 20);
+                localStorage.clear();
+                
+                // 2. Clear sessionStorage
+                updateStatus('Clearing sessionStorage...', 30);
+                sessionStorage.clear();
+                
+                // 3. Clear cookies for this domain
+                updateStatus('Clearing cookies...', 40);
+                clearCookiesForDomain();
+                
+                // 4. Clear IndexedDB if possible
+                updateStatus('Clearing IndexedDB...', 50);
+                await clearIndexedDB();
+                
+                // 5. Clear Cache API if possible
+                updateStatus('Clearing cache storage...', 60);
+                await clearCacheStorage();
+                
+                // 6. Unregister service workers if any
+                updateStatus('Unregistering service workers...', 70);
+                await unregisterServiceWorkers();
+                
+                // Success! Add small delay for user to see 100%
+                updateStatus('✅ Cleanup completed successfully!', 100);
+                
+                // Set success style
+                statusText.className = 'status success';
+                
+                // Wait 2 seconds then redirect
+                setTimeout(() => {
+                    updateStatus('Redirecting to application...', 100);
+                    window.location.href = appUrl;
+                }, 2000);
+                
+            } catch (error) {
+                // Show error and enable restart
+                console.error('Reset error:', error);
+                updateStatus(`❌ Error during cleanup: ${error.message}. Try manual steps.`, 0);
+                statusText.className = 'status error';
+                startButton.disabled = false;
+            }
+        }
+        
+        // Helper functions
+        function updateStatus(message, progress) {
+            statusText.textContent = message;
+            progressBar.style.width = `${progress}%`;
+            progressBar.textContent = `${progress}%`;
+        }
+        
+        function clearCookiesForDomain() {
+            const cookies = document.cookie.split(";");
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                const eqPos = cookie.indexOf("=");
+                const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+                document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/";
+            }
+        }
+        
+        async function clearIndexedDB() {
+            return new Promise((resolve) => {
+                // This is a simplified version - in a production app we would
+                // need to enumerate and delete all databases
+                const DBDeleteRequest = window.indexedDB.deleteDatabase('streamlit');
+                DBDeleteRequest.onsuccess = resolve;
+                DBDeleteRequest.onerror = resolve; // Resolve anyway to continue process
+                setTimeout(resolve, 500); // Fallback timeout
+            });
+        }
+        
+        async function clearCacheStorage() {
+            if ('caches' in window) {
+                try {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map(key => caches.delete(key)));
+                } catch (e) {
+                    console.warn('Cache API clear failed:', e);
+                }
+            }
+            return Promise.resolve();
+        }
+        
+        async function unregisterServiceWorkers() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(registrations.map(r => r.unregister()));
+                } catch (e) {
+                    console.warn('Service worker unregister failed:', e);
+                }
+            }
+            return Promise.resolve();
+        }
+    </script>
+</body>
+</html> 

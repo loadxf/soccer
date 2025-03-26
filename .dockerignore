@@ -1,0 +1,52 @@
+# Docker build context excludes
+
+# Environment & IDE
+.env
+.venv/
+env/
+venv/
+ENV/
+.idea/
+.vscode/
+.cursor/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Data directories (likely large)
+data/
+models/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Logs
+logs/
+*.log
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Other large files
+*.csv
+*.xlsx
+*.json
+*.pickle
+*.pkl
+*.h5
+*.hdf5
+*.pt
+*.pth
+*.onnx
+*.pb
+*.keras
+*.joblib
+*.model 

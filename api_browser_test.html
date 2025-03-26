@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Soccer Prediction System - API Connection Test</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f7f9fc;
+        }
+        h1, h2 {
+            color: #1a3d66;
+        }
+        .test-container {
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+            font-weight: 500;
+        }
+        button:hover {
+            background-color: #155db1;
+        }
+        .success {
+            color: green;
+            font-weight: bold;
+        }
+        .error {
+            color: red;
+            font-weight: bold;
+        }
+        .results {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            min-height: 100px;
+            max-height: 200px;
+            overflow: auto;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .status-green {
+            background-color: #4CAF50;
+        }
+        .status-red {
+            background-color: #F44336;
+        }
+        .status-orange {
+            background-color: #FF9800;
+        }
+        pre {
+            white-space: pre-wrap;
+            overflow-x: auto;
+        }
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 10px;
+        }
+        .tab {
+            padding: 8px 15px;
+            cursor: pointer;
+            background-color: #f1f1f1;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: white;
+            border-bottom: 1px solid white;
+            margin-bottom: -1px;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Soccer Prediction System - API Connection Test</h1>
+    <p>This page tests connections to the API server using both localhost and 127.0.0.1 hostnames.</p>
+
+    <div class="test-container">
+        <h2>API Health Check</h2>
+        <div>
+            <button id="testLocalhostHealth">Test localhost:8080</button>
+            <button id="testIpHealth">Test 127.0.0.1:8080</button>
+        </div>
+        <div class="results" id="healthResults">Results will appear here...</div>
+    </div>
+
+    <div class="test-container">
+        <h2>Get Teams</h2>
+        <div>
+            <button id="testLocalhostTeams">Get Teams (localhost)</button>
+            <button id="testIpTeams">Get Teams (127.0.0.1)</button>
+        </div>
+        <div class="results" id="teamsResults">Results will appear here...</div>
+    </div>
+
+    <div class="test-container">
+        <h2>Get Predictions</h2>
+        <div>
+            <button id="testLocalhostPredictions">Get Predictions (localhost)</button>
+            <button id="testIpPredictions">Get Predictions (127.0.0.1)</button>
+        </div>
+        <div class="results" id="predictionsResults">Results will appear here...</div>
+    </div>
+
+    <div class="test-container">
+        <h2>CORS Test</h2>
+        <div class="tabs">
+            <div class="tab active" data-tab="cors-explanation">Explanation</div>
+            <div class="tab" data-tab="cors-results">Results</div>
+        </div>
+        <div class="tab-content active" id="cors-explanation">
+            <p>This test verifies that the API server allows cross-origin requests from this page.</p>
+            <p>If CORS is properly configured, the API will include the correct headers in its response:</p>
+            <ul>
+                <li><code>Access-Control-Allow-Origin</code> should include the origin of this page</li>
+                <li><code>Access-Control-Allow-Methods</code> should include GET, POST, etc.</li>
+                <li><code>Access-Control-Allow-Headers</code> should include Content-Type</li>
+            </ul>
+            <button id="testCors">Test CORS Configuration</button>
+        </div>
+        <div class="tab-content" id="cors-results">
+            <div class="results" id="corsResults">Results will appear here...</div>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>Connection Summary</h2>
+        <div id="summary">
+            <p><span class="status-indicator status-orange"></span> localhost:8080: Waiting for test...</p>
+            <p><span class="status-indicator status-orange"></span> 127.0.0.1:8080: Waiting for test...</p>
+            <p><span class="status-indicator status-orange"></span> CORS: Waiting for test...</p>
+        </div>
+        <button id="testAll">Test All Connections</button>
+    </div>
+
+    <script>
+        const API_PORT = 8080;
+        
+        // Test result display functions
+        function showSuccess(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<span class="success">✓ SUCCESS</span>: ${message}`;
+        }
+        
+        function showError(elementId, message) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<span class="error">✗ ERROR</span>: ${message}`;
+        }
+        
+        function showResult(elementId, isSuccess, message, data = null) {
+            const element = document.getElementById(elementId);
+            
+            let content = `<span class="${isSuccess ? 'success' : 'error'}">${isSuccess ? '✓ SUCCESS' : '✗ ERROR'}</span>: ${message}`;
+            
+            if (data) {
+                content += `<hr><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            }
+            
+            element.innerHTML = content;
+        }
+        
+        // API test functions
+        async function testHealth(host) {
+            try {
+                const response = await fetch(`http://${host}:${API_PORT}/api/v1/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('healthResults', true, `Connection to http://${host}:${API_PORT} successful`, data);
+                    updateSummary(host, true);
+                    return true;
+                } else {
+                    showResult('healthResults', false, `Failed to connect to http://${host}:${API_PORT} - Status: ${response.status}`);
+                    updateSummary(host, false);
+                    return false;
+                }
+            } catch (error) {
+                showResult('healthResults', false, `Error connecting to http://${host}:${API_PORT} - ${error.message}`);
+                updateSummary(host, false);
+                return false;
+            }
+        }
+        
+        async function testEndpoint(host, endpoint, resultElementId) {
+            try {
+                const response = await fetch(`http://${host}:${API_PORT}/api/v1/${endpoint}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult(resultElementId, true, `Retrieved data from http://${host}:${API_PORT}/api/v1/${endpoint}`, data);
+                    return true;
+                } else {
+                    showResult(resultElementId, false, `Failed to get data from http://${host}:${API_PORT}/api/v1/${endpoint} - Status: ${response.status}`);
+                    return false;
+                }
+            } catch (error) {
+                showResult(resultElementId, false, `Error connecting to http://${host}:${API_PORT}/api/v1/${endpoint} - ${error.message}`);
+                return false;
+            }
+        }
+        
+        async function testCors() {
+            try {
+                // First test the preflight request
+                const preflightTest = await fetch(`http://localhost:${API_PORT}/api/v1/health`, {
+                    method: 'OPTIONS',
+                    headers: {
+                        'Origin': window.location.origin,
+                        'Access-Control-Request-Method': 'GET',
+                        'Access-Control-Request-Headers': 'Content-Type'
+                    }
+                });
+                
+                // Get the response headers
+                const allowOrigin = preflightTest.headers.get('Access-Control-Allow-Origin');
+                const allowMethods = preflightTest.headers.get('Access-Control-Allow-Methods');
+                const allowHeaders = preflightTest.headers.get('Access-Control-Allow-Headers');
+                
+                const corsResult = {
+                    'Access-Control-Allow-Origin': allowOrigin,
+                    'Access-Control-Allow-Methods': allowMethods,
+                    'Access-Control-Allow-Headers': allowHeaders
+                };
+                
+                // Check if CORS is properly configured
+                const isSuccess = allowOrigin && (allowOrigin === '*' || allowOrigin.includes(window.location.origin));
+                
+                showResult('corsResults', isSuccess, 
+                    isSuccess ? 'CORS is properly configured' : 'CORS is not properly configured', 
+                    corsResult
+                );
+                
+                // Update the summary
+                updateSummary('cors', isSuccess);
+                
+                return isSuccess;
+            } catch (error) {
+                showResult('corsResults', false, `Error testing CORS - ${error.message}`);
+                updateSummary('cors', false);
+                return false;
+            }
+        }
+        
+        // Update summary section
+        function updateSummary(type, isSuccess) {
+            const summary = document.getElementById('summary');
+            const status = isSuccess ? 'status-green' : 'status-red';
+            
+            if (type === 'localhost') {
+                summary.innerHTML = summary.innerHTML.replace(
+                    /<span class="status-indicator .*?"><\/span> localhost:8080.*/,
+                    `<span class="status-indicator ${status}"></span> localhost:8080: ${isSuccess ? 'Working' : 'Not working'}`
+                );
+            } else if (type === '127.0.0.1') {
+                summary.innerHTML = summary.innerHTML.replace(
+                    /<span class="status-indicator .*?"><\/span> 127.0.0.1:8080.*/,
+                    `<span class="status-indicator ${status}"></span> 127.0.0.1:8080: ${isSuccess ? 'Working' : 'Not working'}`
+                );
+            } else if (type === 'cors') {
+                summary.innerHTML = summary.innerHTML.replace(
+                    /<span class="status-indicator .*?"><\/span> CORS.*/,
+                    `<span class="status-indicator ${status}"></span> CORS: ${isSuccess ? 'Properly configured' : 'Not properly configured'}`
+                );
+            }
+        }
+        
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabId = tab.getAttribute('data-tab');
+                
+                // Update active tab
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Show active content
+                document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+        
+        // Event listeners for buttons
+        document.getElementById('testLocalhostHealth').addEventListener('click', () => testHealth('localhost'));
+        document.getElementById('testIpHealth').addEventListener('click', () => testHealth('127.0.0.1'));
+        document.getElementById('testLocalhostTeams').addEventListener('click', () => testEndpoint('localhost', 'teams', 'teamsResults'));
+        document.getElementById('testIpTeams').addEventListener('click', () => testEndpoint('127.0.0.1', 'teams', 'teamsResults'));
+        document.getElementById('testLocalhostPredictions').addEventListener('click', () => testEndpoint('localhost', 'predictions', 'predictionsResults'));
+        document.getElementById('testIpPredictions').addEventListener('click', () => testEndpoint('127.0.0.1', 'predictions', 'predictionsResults'));
+        document.getElementById('testCors').addEventListener('click', testCors);
+        
+        document.getElementById('testAll').addEventListener('click', async () => {
+            await testHealth('localhost');
+            await testHealth('127.0.0.1');
+            await testCors();
+        });
+    </script>
+</body>
+</html> 

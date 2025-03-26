@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap"
+    />
+    <title>Soccer Prediction System - Offline</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: 'Roboto', sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-color: #f5f5f5;
+        color: #333;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        text-align: center;
+        padding: 20px;
+      }
+      
+      .offline-container {
+        max-width: 500px;
+        padding: 30px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0px 8px 16px rgba(0, 0, 0, 0.1);
+      }
+      
+      h1 {
+        font-size: 2rem;
+        margin-bottom: 1rem;
+        color: #1976d2;
+      }
+      
+      p {
+        font-size: 1.1rem;
+        line-height: 1.5;
+        margin-bottom: 1.5rem;
+      }
+      
+      .icon {
+        font-size: 4rem;
+        margin-bottom: 1.5rem;
+        color: #1976d2;
+      }
+      
+      .retry-button {
+        background-color: #1976d2;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background-color 0.3s;
+      }
+      
+      .retry-button:hover {
+        background-color: #1565c0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="offline-container">
+      <div class="icon">📶</div>
+      <h1>You're Offline</h1>
+      <p>
+        It looks like you've lost your internet connection. Some features of the Soccer Prediction System may not be available while you're offline.
+      </p>
+      <p>
+        You can still access cached content and previously viewed predictions.
+      </p>
+      <button class="retry-button" onclick="window.location.reload()">
+        Try Again
+      </button>
+    </div>
+  </body>
+</html> 

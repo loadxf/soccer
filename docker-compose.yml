@@ -1,0 +1,206 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+      - "9091:9091"  # Prometheus metrics
+    volumes:
+      - .:/app
+      # Create logs directory for application
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    depends_on:
+      - db
+    command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - soccer-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    ports:
+      - "8501:8501"  # Streamlit default port
+    volumes:
+      - ./ui:/app/ui
+      - ./config:/app/config
+    depends_on:
+      app:
+        condition: service_healthy
+    command: streamlit run /app/ui/app.py --server.port=8501 --server.address=0.0.0.0
+    networks:
+      - soccer-net
+
+  db:
+    image: postgres:13
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=soccer_prediction
+    networks:
+      - soccer-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4
+    depends_on:
+      - db
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+    networks:
+      - soccer-net
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - .:/app
+      # Create logs directory for tests
+      - ./logs:/app/logs
+    env_file:
+      - .env.test
+    depends_on:
+      - db_test
+    command: pytest tests/ -v
+    networks:
+      - soccer-net
+
+  db_test:
+    image: postgres:13
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=soccer_prediction_test
+    networks:
+      - soccer-net
+
+  # Monitoring services
+  prometheus:
+    image: prom/prometheus:v2.46.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - soccer-net
+    container_name: prometheus
+    restart: unless-stopped
+
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    networks:
+      - soccer-net
+    container_name: alertmanager
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.0.3
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - soccer-net
+    container_name: grafana
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker/containers|rootfs/var/lib/docker/overlay2|rootfs/run/docker/netns|rootfs/var/lib/docker/aufs)($$|/)'
+    ports:
+      - "9100:9100"
+    networks:
+      - soccer-net
+    container_name: node-exporter
+    restart: unless-stopped
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.1
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - soccer-net
+    container_name: soccer-cadvisor
+    restart: unless-stopped
+    command:
+      - '--docker_only=true'
+      - '--housekeeping_interval=10s'
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.14.0
+    environment:
+      - DATA_SOURCE_NAME=postgresql://postgres:postgres@db:5432/soccer_prediction?sslmode=disable
+    ports:
+      - "9187:9187"
+    depends_on:
+      - db
+    networks:
+      - soccer-net
+    container_name: postgres-exporter
+    restart: unless-stopped
+
+networks:
+  soccer-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data: 

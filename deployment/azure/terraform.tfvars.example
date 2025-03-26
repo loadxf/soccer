@@ -1,0 +1,10 @@
+location           = "eastus"
+project_name       = "soccer-prediction"
+environment        = "development"
+db_sku             = "B_Standard_B1ms"
+db_username        = "dbadmin"
+db_password        = "YourStrongPasswordHere"
+db_name            = "soccer_prediction"
+kubernetes_version = "1.27.7"
+aks_node_count     = 2
+aks_vm_size        = "Standard_DS2_v2" 

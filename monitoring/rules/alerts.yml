@@ -1,0 +1,83 @@
+groups:
+- name: soccer-prediction-alerts
+  rules:
+  - alert: HighRequestLatency
+    expr: http_request_duration_seconds_sum / http_request_duration_seconds_count > 1
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High request latency on {{ $labels.endpoint }}"
+      description: "{{ $labels.endpoint }} has a request latency above 1s (current value: {{ $value }}s)"
+
+  - alert: HighErrorRate
+    expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.01
+    for: 2m
+    labels:
+      severity: error
+    annotations:
+      summary: "High error rate"
+      description: "Error rate is above 1% (current value: {{ $value | humanizePercentage }})"
+
+  - alert: InstanceDown
+    expr: up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+      description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute"
+
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU usage on {{ $labels.instance }}"
+      description: "CPU usage is above 80% (current value: {{ $value | humanizePercentage }})"
+
+  - alert: HighMemoryUsage
+    expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High memory usage on {{ $labels.instance }}"
+      description: "Memory usage is above 85% (current value: {{ $value | humanizePercentage }})"
+
+  - alert: HighDiskUsage
+    expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes * 100 > 85
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High disk usage on {{ $labels.instance }} - {{ $labels.mountpoint }}"
+      description: "Disk usage is above 85% (current value: {{ $value | humanizePercentage }})"
+
+  - alert: SlowDBQueries
+    expr: db_query_duration_seconds_sum / db_query_duration_seconds_count > 0.5
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Slow database queries on {{ $labels.table }}"
+      description: "Database query type {{ $labels.query_type }} on {{ $labels.table }} is taking more than 500ms on average (current value: {{ $value }}s)"
+
+  - alert: ModelPredictionLatency
+    expr: model_prediction_duration_seconds_sum / model_prediction_duration_seconds_count > 2
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Model prediction latency for {{ $labels.model_name }}"
+      description: "Model {{ $labels.model_name }} predictions are taking more than 2 seconds on average (current value: {{ $value }}s)"
+
+  - alert: LowModelAccuracy
+    expr: model_accuracy < 0.7
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Low model accuracy for {{ $labels.model_name }}"
+      description: "Model {{ $labels.model_name }} accuracy is below 70% (current value: {{ $value | humanizePercentage }})" 
