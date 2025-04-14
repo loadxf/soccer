@@ -1,0 +1,57 @@
+{
+  "short_name": "Soccer Predictions",
+  "name": "Soccer Prediction System",
+  "description": "Advanced machine learning system for predicting soccer match outcomes",
+  "icons": [
+    {
+      "src": "favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1976d2",
+  "background_color": "#ffffff",
+  "categories": ["sports", "predictions", "statistics"],
+  "shortcuts": [
+    {
+      "name": "View Upcoming Matches",
+      "short_name": "Matches",
+      "description": "View upcoming soccer matches",
+      "url": "/matches",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "My Predictions",
+      "short_name": "Predictions",
+      "description": "View your match predictions",
+      "url": "/predictions",
+      "icons": [{ "src": "logo192.png", "sizes": "192x192" }]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screenshot1.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "platform": "wide",
+      "label": "Dashboard view of the Soccer Prediction System"
+    }
+  ],
+  "prefer_related_applications": false
+} 
