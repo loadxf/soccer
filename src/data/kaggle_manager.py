@@ -160,9 +160,47 @@ def import_dataset(dataset_ref, target_dir=None):
             # Default to project data directory
             project_root = Path(__file__).resolve().parent.parent.parent
             target_dir = project_root / "data" / "kaggle_imports"
+            
+            # Also create a temp directory for download in case of permission issues
+            temp_dir = project_root / "data" / "temp"
+            os.makedirs(temp_dir, exist_ok=True)
+        else:
+            temp_dir = Path(target_dir) / "temp"
+            os.makedirs(temp_dir, exist_ok=True)
         
         # Make sure target directory exists
-        os.makedirs(target_dir, exist_ok=True)
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"Target directory created: {target_dir}")
+        except Exception as dir_error:
+            print(f"Warning - could not create target directory: {str(dir_error)}")
+            print(f"Will attempt to use temporary directory: {temp_dir}")
+            target_dir = temp_dir
+        
+        # Test write permissions
+        try:
+            test_file = Path(target_dir) / ".write_test"
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            print(f"Target directory is writable: {target_dir}")
+        except Exception as perm_error:
+            print(f"Warning - target directory is not writable: {str(perm_error)}")
+            print(f"Will attempt to use temporary directory: {temp_dir}")
+            target_dir = temp_dir
+            
+            # Test the temp directory
+            try:
+                test_file = Path(temp_dir) / ".write_test"
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                print(f"Temp directory is writable: {temp_dir}")
+            except Exception as temp_error:
+                return {
+                    "status": "error",
+                    "message": f"Cannot write to any directory: {str(temp_error)}"
+                }
         
         # Change to target directory for download
         original_dir = os.getcwd()
@@ -170,13 +208,49 @@ def import_dataset(dataset_ref, target_dir=None):
         
         try:
             # Download the dataset
+            print(f"Downloading dataset {dataset_ref} to {target_dir}")
             kaggle.api.dataset_download_files(dataset_ref, unzip=True)
             
             # List the downloaded files
             files = [f for f in os.listdir('.') if os.path.isfile(f)]
+            print(f"Downloaded files: {files}")
             
             # Change back to original directory
             os.chdir(original_dir)
+            
+            # If we used temp_dir, try to move files to the proper location
+            if target_dir == temp_dir and len(files) > 0:
+                proper_target = project_root / "data" / "kaggle_imports"
+                try:
+                    os.makedirs(proper_target, exist_ok=True)
+                    
+                    # Try to move files
+                    moved_files = []
+                    for file in files:
+                        src = temp_dir / file
+                        dst = proper_target / file
+                        try:
+                            import shutil
+                            shutil.copy2(src, dst)
+                            moved_files.append(file)
+                            print(f"Copied {src} to {dst}")
+                        except Exception as move_error:
+                            print(f"Could not move file {file}: {str(move_error)}")
+                    
+                    # If we moved any files, update the target_dir
+                    if moved_files:
+                        target_dir = proper_target
+                        files = moved_files
+                except Exception as move_dir_error:
+                    print(f"Could not move files to proper location: {str(move_dir_error)}")
+            
+            # Register the dataset
+            try:
+                from src.data.dataset_registry import register_kaggle_dataset
+                registry_result = register_kaggle_dataset(dataset_ref, str(target_dir), files)
+                print(f"Dataset registration result: {registry_result}")
+            except Exception as reg_error:
+                print(f"Warning - Could not register dataset: {str(reg_error)}")
             
             return {
                 "status": "success",
@@ -189,6 +263,7 @@ def import_dataset(dataset_ref, target_dir=None):
             if os.getcwd() != original_dir:
                 os.chdir(original_dir)
     except Exception as e:
+        print(f"Error importing dataset: {str(e)}")
         return {
             "status": "error",
             "message": f"Error importing dataset: {str(e)}"

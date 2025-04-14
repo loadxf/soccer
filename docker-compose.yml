@@ -5,9 +5,14 @@ services:
       - "8000:8000"
       - "9091:9091"  # Prometheus metrics
     volumes:
-      - .:/app
-      # Create logs directory for application
-      - ./logs:/app/logs
+      # Mount specific directories instead of the entire project
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./scripts:/app/scripts
+      # Use bind mount for data directory instead of named volume for better permission handling
+      - ./data:/app/data
+      # Use named volume for logs directory
+      - app_logs:/app/logs
     env_file:
       - .env
     depends_on:
@@ -16,11 +21,11 @@ services:
     networks:
       - soccer-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/v1/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
 
   ui:
     build:
@@ -203,4 +208,5 @@ networks:
 volumes:
   postgres_data:
   prometheus_data:
-  grafana_data: 
+  grafana_data:
+  app_logs: 

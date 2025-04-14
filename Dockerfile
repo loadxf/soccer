@@ -14,10 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file and install Python dependencies
+# Copy requirements files and install Python dependencies
 COPY requirements.txt .
+COPY optional-requirements.txt .
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r optional-requirements.txt
 
 # Copy only the necessary project files
 COPY config/ /app/config/
@@ -35,4 +37,5 @@ USER appuser
 
 # Run the application
 EXPOSE 8000
+EXPOSE 9091
 CMD ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000"] 

@@ -295,6 +295,87 @@ def batch_process_datasets(dataset_ids, process_function, **kwargs):
     
     return results
 
+def register_kaggle_dataset(dataset_ref, path, files):
+    """
+    Register a dataset imported from Kaggle.
+    
+    Args:
+        dataset_ref (str): The Kaggle dataset reference
+        path (str): Path where the dataset is stored
+        files (list): List of imported files
+        
+    Returns:
+        str: The dataset ID
+    """
+    # Extract dataset name from reference
+    dataset_name = dataset_ref.split('/')[-1] if '/' in dataset_ref else dataset_ref
+    
+    # Create dataset info
+    dataset_info = {
+        "id": str(uuid.uuid4()),
+        "name": dataset_name,
+        "source": "kaggle",
+        "kaggle_ref": dataset_ref,
+        "path": path,
+        "files": files,
+        "upload_date": datetime.now().isoformat(),
+        "status": "raw",
+        "description": f"Imported from Kaggle: {dataset_ref}"
+    }
+    
+    try:
+        # Try to detect file types
+        file_types = []
+        for file in files:
+            file_path = os.path.join(path, file)
+            if file.endswith('.csv'):
+                file_types.append("csv")
+            elif file.endswith('.json'):
+                file_types.append("json")
+            elif file.endswith('.xlsx') or file.endswith('.xls'):
+                file_types.append("excel")
+            else:
+                file_types.append("unknown")
+        
+        dataset_info["file_types"] = file_types
+        
+        # Try to get file sizes
+        file_sizes = []
+        for file in files:
+            file_path = os.path.join(path, file)
+            try:
+                size = os.path.getsize(file_path)
+                file_sizes.append(size)
+            except:
+                file_sizes.append(0)
+        
+        dataset_info["file_sizes"] = file_sizes
+        
+        # Try to get row counts for tabular data
+        row_counts = []
+        for file in files:
+            file_path = os.path.join(path, file)
+            try:
+                if file.endswith('.csv'):
+                    df = pd.read_csv(file_path, nrows=5)
+                    count = len(pd.read_csv(file_path, usecols=[0]))
+                    row_counts.append(count)
+                elif file.endswith('.xlsx') or file.endswith('.xls'):
+                    df = pd.read_excel(file_path, nrows=5)
+                    count = len(pd.read_excel(file_path, usecols=[0]))
+                    row_counts.append(count)
+                else:
+                    row_counts.append(0)
+            except:
+                row_counts.append(0)
+        
+        dataset_info["row_counts"] = row_counts
+    except Exception as e:
+        print(f"Error analyzing Kaggle files: {str(e)}")
+    
+    # Register the dataset
+    return register_dataset(dataset_info)
+
 # Main function for CLI usage
 if __name__ == "__main__":
     import sys

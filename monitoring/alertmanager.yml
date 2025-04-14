@@ -4,7 +4,8 @@ global:
   smtp_from: 'alertmanager@example.com'
   smtp_auth_username: 'alertmanager'
   smtp_auth_password: 'password'
-  slack_api_url: '${SLACK_WEBHOOK_URL}'
+  # Comment out the slack webhook URL until you have a valid one
+  # slack_api_url: '${SLACK_WEBHOOK_URL}'
   pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
 
 templates:
@@ -54,5 +55,5 @@ receivers:
 
   - name: 'pagerduty-critical'
     pagerduty_configs:
-    - service_key: '${PAGERDUTY_SERVICE_KEY}'
+    - service_key: 'dummy_key_for_development'  # Replace with actual key in production
       send_resolved: true 
