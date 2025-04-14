@@ -32,11 +32,18 @@ try:
     logger.info(f"Using shared configuration: {BASE_URL}")
     has_config = True
 except ImportError:
+    # Check if we're running in Docker
+    is_docker = os.path.exists('/.dockerenv')
+    
     # Define API base URL using standard hostname and port
-    API_HOST = "localhost"  # Try using localhost as default
-    API_PORT = 8080  # Standard port for our API
-    API_VERSION = "v1"
-    API_BASE_URL = f"http://{API_HOST}:{API_PORT}/api/{API_VERSION}"
+    if is_docker:
+        API_HOST = "app"  # Use the service name in Docker
+    else:
+        API_HOST = "localhost"  # Use localhost for non-Docker environments
+        
+    API_PORT = 8000  # Correct port for our API (was 8080)
+    # No /api/v1 prefix
+    API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
     BASE_URL = API_BASE_URL
     REQUEST_TIMEOUT = 10  # 10 seconds timeout for API requests
     logger.info(f"Using default configuration: {API_BASE_URL}")
@@ -44,6 +51,8 @@ except ImportError:
 
     # Define our own fallback functions if api_config is not available
     def get_alternative_hostname(hostname):
+        if hostname == "app":
+            return "app"  # Always use the service name in Docker
         return '127.0.0.1' if hostname == 'localhost' else 'localhost'
 
 # Cache configuration
@@ -61,6 +70,8 @@ def get_api_data(endpoint: str, params: Optional[Dict] = None, cache: bool = Tru
     Returns:
         API response data or fallback data if API is unavailable
     """
+    # Ensure endpoint doesn't start with a slash
+    endpoint = endpoint.lstrip('/')
     url = f"{BASE_URL}/{endpoint}"
     logger.info(f"Making GET request to: {url}")
     
@@ -303,6 +314,7 @@ class SoccerPredictionAPI:
     @staticmethod
     def check_health() -> Dict:
         """Check if the API is healthy"""
+        # Use direct health endpoint without /api/v1 prefix
         url = f"{BASE_URL}/health"
         logger.info(f"Checking API health at: {url}")
         

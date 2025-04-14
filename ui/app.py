@@ -204,13 +204,24 @@ def check_api_health_with_retries(max_retries=3, initial_delay=1, backoff_factor
     """Check API health with retry logic if it fails"""
     import requests
     import time
+    import os
     from urllib.parse import urlparse
     
+    # Check if we're running in Docker
+    is_docker = os.path.exists('/.dockerenv')
+    
     # Define API URLs to try
-    api_urls = [
-        "http://localhost:8080/api/v1/health",
-        "http://127.0.0.1:8080/api/v1/health"
-    ]
+    api_urls = []
+    
+    # In Docker, try the container name first
+    if is_docker:
+        api_urls.append("http://app:8000/health")
+    
+    # Then try localhost and IP address
+    api_urls.extend([
+        "http://localhost:8000/health",
+        "http://127.0.0.1:8000/health"
+    ])
     
     # Try each URL with retries
     for url in api_urls:
@@ -500,10 +511,10 @@ def show_debug_info():
             # Display connection test buttons
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("Test localhost:8080"):
+                if st.button("Test localhost:8000"):
                     try:
                         import requests
-                        response = requests.get("http://localhost:8080/api/v1/health", timeout=2)
+                        response = requests.get("http://localhost:8000/health", timeout=2)
                         if response.status_code == 200:
                             st.success(f"✅ localhost connection successful!")
                             st.json(response.json())
@@ -513,10 +524,10 @@ def show_debug_info():
                         st.error(f"❌ localhost connection error: {str(e)}")
             
             with col2:
-                if st.button("Test 127.0.0.1:8080"):
+                if st.button("Test 127.0.0.1:8000"):
                     try:
                         import requests
-                        response = requests.get("http://127.0.0.1:8080/api/v1/health", timeout=2)
+                        response = requests.get("http://127.0.0.1:8000/health", timeout=2)
                         if response.status_code == 200:
                             st.success(f"✅ 127.0.0.1 connection successful!")
                             st.json(response.json())
@@ -546,7 +557,7 @@ def show_debug_info():
             st.markdown("""
             If you're experiencing API connection issues:
             
-            1. **Check API server** - Make sure the API server is running on port 8080
+            1. **Check API server** - Make sure the API server is running on port 8000
             2. **Test connections** - Use the test buttons above to check both localhost and 127.0.0.1
             3. **Network issues** - Check for firewall or proxy settings blocking connections
             4. **Try alternative hostname** - If localhost doesn't work, try 127.0.0.1 directly

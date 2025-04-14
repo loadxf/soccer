@@ -6,6 +6,7 @@ This module provides Streamlit UI components for Kaggle integration.
 
 import streamlit as st
 import sys
+import os
 from pathlib import Path
 
 # Add the project root to sys.path if needed
@@ -27,6 +28,12 @@ def show_kaggle_setup_instructions():
     """Display instructions for setting up Kaggle API access."""
     st.warning("Kaggle API credentials not found. Follow these steps to use Kaggle datasets:")
     
+    # Get current user information for paths
+    windows_username = os.environ.get('USERNAME')
+    linux_username = os.environ.get('USER') or os.environ.get('LOGNAME')
+    windows_path = f"C:\\Users\\{windows_username}\\.kaggle\\kaggle.json"
+    linux_path = f"/home/{linux_username}/.kaggle/kaggle.json"
+    
     # Display instructions directly without using an expander
     st.markdown("""
     ### Setting up Kaggle API access
@@ -35,10 +42,43 @@ def show_kaggle_setup_instructions():
     2. Go to your Kaggle account settings (click on your profile picture → Account)
     3. Scroll down to the API section and click "Create New API Token"
     4. This will download a `kaggle.json` file with your credentials
-    5. Place this file in the `~/.kaggle/` directory:
-       - Windows: `C:\\Users\\<Windows-username>\\.kaggle\\kaggle.json`
-       - Linux/Mac: `~/.kaggle/kaggle.json`
-    6. Install the Kaggle API package:
+    5. Place this file in one of these locations:
+    """)
+    
+    # Windows-specific instructions
+    if os.name == 'nt':
+        st.code(f"Windows path: {windows_path}")
+        st.markdown("""
+        To set up on Windows:
+        1. Create the `.kaggle` folder in your user directory if it doesn't exist
+        2. Copy the downloaded `kaggle.json` file into this folder
+        3. Make sure the file permissions are secure (only you can read the file)
+        """)
+    else:
+        st.code(f"Linux/Mac path: {linux_path}")
+        st.markdown("""
+        To set up on Ubuntu/Linux:
+        1. Create the `.kaggle` directory:
+           ```bash
+           mkdir -p ~/.kaggle
+           ```
+        2. Move the downloaded kaggle.json file:
+           ```bash
+           mv ~/Downloads/kaggle.json ~/.kaggle/
+           ```
+        3. Set proper permissions (required on Linux):
+           ```bash
+           chmod 600 ~/.kaggle/kaggle.json
+           ```
+        This command makes the file only readable/writable by you, which is required for security.
+        """)
+        
+    st.markdown("""
+    6. Alternatively, set these environment variables:
+       - `KAGGLE_USERNAME`: Your Kaggle username
+       - `KAGGLE_KEY`: Your Kaggle API key (found in the kaggle.json file)
+    
+    7. Install the Kaggle API package:
        ```
        pip install kaggle
        ```
@@ -126,8 +166,20 @@ def import_kaggle_dataset(dataset_ref):
             # First check if Kaggle is configured
             if not is_kaggle_configured():
                 st.error("Kaggle credentials not found")
+                
+                # Show OS-specific paths
+                if os.name == 'nt':  # Windows
+                    windows_username = os.environ.get('USERNAME')
+                    st.warning(f"On Windows, place kaggle.json at: C:\\Users\\{windows_username}\\.kaggle\\kaggle.json")
+                else:  # Linux/Mac
+                    linux_username = os.environ.get('USER') or os.environ.get('LOGNAME')
+                    st.warning(f"""
+                        On Linux/Ubuntu, place kaggle.json at: /home/{linux_username}/.kaggle/kaggle.json
+                        And set permissions: chmod 600 ~/.kaggle/kaggle.json
+                    """)
+                
                 show_kaggle_setup_instructions()
-                return
+                return False
             
             # Import the dataset
             result = import_dataset(dataset_ref)
@@ -151,6 +203,33 @@ def verify_kaggle_setup():
     """Test Kaggle authentication and display the result."""
     with st.spinner("Verifying Kaggle setup..."):
         try:
+            # First check if Kaggle is configured
+            if not is_kaggle_configured():
+                st.error("❌ Kaggle credentials not found")
+                
+                # Show OS-specific credential locations
+                if os.name == 'nt':  # Windows
+                    # Show possible credential locations for Windows
+                    st.warning(f"""
+                        On Windows, your credentials should be in one of these locations:
+                        - `C:\\Users\\{os.environ.get('USERNAME')}\\.kaggle\\kaggle.json`
+                        - `{os.path.join(os.environ.get('USERPROFILE', ''), '.kaggle', 'kaggle.json')}`
+                    """)
+                else:  # Linux/Mac
+                    linux_username = os.environ.get('USER') or os.environ.get('LOGNAME')
+                    st.warning(f"""
+                        On Linux/Ubuntu, your credentials should be in:
+                        - `/home/{linux_username}/.kaggle/kaggle.json`
+                        
+                        Make sure permissions are set correctly:
+                        ```bash
+                        chmod 600 ~/.kaggle/kaggle.json
+                        ```
+                    """)
+                
+                show_kaggle_setup_instructions()
+                return False
+                
             # Test authentication
             result = test_kaggle_auth()
             

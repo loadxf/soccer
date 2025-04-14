@@ -8,13 +8,14 @@ including hostname resolution with fallback mechanisms.
 import logging
 import socket
 import requests
+import os
 from typing import Tuple, Optional
 import time
 
 # Constants
 DEFAULT_API_HOST = "localhost"
 FALLBACK_API_HOST = "127.0.0.1"
-DEFAULT_API_PORT = 8080
+DEFAULT_API_PORT = 8000  # Updated from 8080 to 8000
 DEFAULT_API_TIMEOUT = 10  # seconds
 
 # Setup logging
@@ -25,7 +26,15 @@ class ApiConfig:
     """Centralized API configuration with fallback mechanisms"""
     
     def __init__(self):
-        self.api_host = DEFAULT_API_HOST
+        # Check if we're running in Docker
+        self.is_docker = os.path.exists('/.dockerenv')
+        
+        # In Docker, use the service name
+        if self.is_docker:
+            self.api_host = "app"
+        else:
+            self.api_host = DEFAULT_API_HOST
+            
         self.api_port = DEFAULT_API_PORT
         self.api_timeout = DEFAULT_API_TIMEOUT
         self.fallback_mode = False
@@ -34,15 +43,24 @@ class ApiConfig:
     @property
     def api_base_url(self) -> str:
         """Return the base URL for API calls."""
-        return f"http://{self.api_host}:{self.api_port}/api/v1"
+        # No longer using /api/v1 prefix
+        return f"http://{self.api_host}:{self.api_port}"
     
     @property
     def api_health_url(self) -> str:
         """Return the health check URL."""
+        # Direct health endpoint
         return f"{self.api_base_url}/health"
     
     def get_best_hostname(self) -> str:
         """Determine the best hostname to use, testing both options if needed."""
+        # In Docker, always use the container service name first
+        if self.is_docker and self._test_connection("app"):
+            logger.info("Docker service name 'app' is accessible")
+            self.api_host = "app"
+            self.fallback_mode = False
+            return "app"
+            
         if self._test_connection(DEFAULT_API_HOST):
             logger.info(f"Primary hostname '{DEFAULT_API_HOST}' is accessible")
             self.api_host = DEFAULT_API_HOST
@@ -63,12 +81,13 @@ class ApiConfig:
     def _test_connection(self, hostname: str) -> bool:
         """Test if the API is accessible using the given hostname."""
         try:
-            # First test if the hostname resolves
-            socket.gethostbyname(hostname)
+            # First test if the hostname resolves (skip for container names)
+            if hostname not in ["app"]:
+                socket.gethostbyname(hostname)
             
-            # Then test if the API responds
+            # Then test if the API responds with direct health endpoint
             response = requests.get(
-                f"http://{hostname}:{self.api_port}/api/v1/health",
+                f"http://{hostname}:{self.api_port}/health",
                 timeout=self.api_timeout
             )
             return response.status_code == 200
@@ -84,7 +103,10 @@ class ApiConfig:
     
     def reset(self) -> None:
         """Reset the configuration to defaults."""
-        self.api_host = DEFAULT_API_HOST
+        if self.is_docker:
+            self.api_host = "app"
+        else:
+            self.api_host = DEFAULT_API_HOST
         self.api_port = DEFAULT_API_PORT
         self.api_timeout = DEFAULT_API_TIMEOUT
         self.fallback_mode = False
@@ -103,10 +125,25 @@ def test_api_connection() -> Tuple[bool, str, Optional[dict]]:
             - Message describing the result
             - Response data if successful, None otherwise
     """
+    # Check if we're running in Docker
+    is_docker = os.path.exists('/.dockerenv')
+    
+    # Try Docker service name first if in Docker
+    if is_docker:
+        try:
+            response = requests.get(
+                f"http://app:{DEFAULT_API_PORT}/health",
+                timeout=DEFAULT_API_TIMEOUT
+            )
+            if response.status_code == 200:
+                return True, "API accessible via Docker service name", response.json()
+        except requests.RequestException:
+            pass
+    
     # Try primary hostname
     try:
         response = requests.get(
-            f"http://{DEFAULT_API_HOST}:{DEFAULT_API_PORT}/api/v1/health",
+            f"http://{DEFAULT_API_HOST}:{DEFAULT_API_PORT}/health",
             timeout=DEFAULT_API_TIMEOUT
         )
         if response.status_code == 200:
@@ -117,7 +154,7 @@ def test_api_connection() -> Tuple[bool, str, Optional[dict]]:
     # Try fallback hostname
     try:
         response = requests.get(
-            f"http://{FALLBACK_API_HOST}:{DEFAULT_API_PORT}/api/v1/health",
+            f"http://{FALLBACK_API_HOST}:{DEFAULT_API_PORT}/health",
             timeout=DEFAULT_API_TIMEOUT
         )
         if response.status_code == 200:

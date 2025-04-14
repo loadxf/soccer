@@ -10,7 +10,8 @@ from typing import List
 
 # Base configuration
 API_VERSION = "v1"
-API_PORT = 8080
+# Docker uses port 8000, not 8080
+API_PORT = 8000  
 REQUEST_TIMEOUT = 10  # seconds
 
 # Determine the best hostname to use based on system capabilities
@@ -19,6 +20,11 @@ def get_preferred_hostname() -> str:
     Determine the best hostname to use based on system capabilities.
     Returns 'localhost' or '127.0.0.1' depending on what works best on this system.
     """
+    # Check if we're running in Docker
+    if os.path.exists('/.dockerenv'):
+        # In Docker, use the service name instead of localhost
+        return 'app'
+    
     # Try to connect to localhost first
     try:
         socket.gethostbyname('localhost')
@@ -31,8 +37,8 @@ def get_preferred_hostname() -> str:
 # Set API host using the preferred hostname
 API_HOST = get_preferred_hostname()
 
-# Set API base URL
-API_BASE_URL = f"http://{API_HOST}:{API_PORT}/api/{API_VERSION}"
+# Set API base URL - remove '/api/v1' since the API doesn't use this path structure
+API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
 
 # UI configuration
 UI_PORT = 8501
@@ -44,6 +50,8 @@ CORS_ORIGINS: List[str] = [
     f"http://127.0.0.1:{UI_PORT}",
     f"http://localhost:{API_PORT}",
     f"http://127.0.0.1:{API_PORT}",
+    f"http://app:{API_PORT}",  # Add Docker service name
+    f"http://ui:{UI_PORT}",    # Add Docker service name
     "null"  # Allow file:// protocol requests
 ]
 
@@ -93,7 +101,7 @@ def get_working_api_url() -> str:
     # Try the alternative hostname
     alt_host = get_alternative_hostname(API_HOST)
     if try_connect(alt_host, API_PORT):
-        return f"http://{alt_host}:{API_PORT}/api/{API_VERSION}"
+        return f"http://{alt_host}:{API_PORT}"
     
     # If neither works, return the default
     return API_BASE_URL 

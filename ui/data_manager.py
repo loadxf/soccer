@@ -319,11 +319,11 @@ class DataManager:
             return False
     
     def show_kaggle_setup_instructions(self):
-        """Show Kaggle setup instructions."""
-        if hasattr(self, '_show_instructions'):
-            self._show_instructions()
-        else:
-            show_kaggle_setup_instructions()
+        """
+        Show Kaggle setup instructions.
+        """
+        from ui.kaggle_ui import show_kaggle_setup_instructions
+        show_kaggle_setup_instructions()
     
     def verify_kaggle_setup(self):
         """

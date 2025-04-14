@@ -8,6 +8,11 @@ It safely handles Kaggle imports and authentication to avoid errors.
 import os
 import sys
 from pathlib import Path
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Function to check if Kaggle is properly configured
 def is_kaggle_configured():
@@ -17,14 +22,72 @@ def is_kaggle_configured():
     Returns:
         bool: True if Kaggle credentials are found, False otherwise
     """
-    # Check if kaggle.json exists
+    # Check if kaggle.json exists - Unix style path
     kaggle_json_path = os.path.expanduser('~/.kaggle/kaggle.json')
     json_exists = os.path.exists(kaggle_json_path)
+    
+    if json_exists:
+        # On Unix/Linux, check file permissions (should be 600)
+        if os.name != 'nt':  # Unix/Linux systems
+            try:
+                import stat
+                file_stat = os.stat(kaggle_json_path)
+                mode = file_stat.st_mode
+                
+                # Check if file is only readable/writable by owner
+                if mode & (stat.S_IRWXG | stat.S_IRWXO):
+                    logger.warning(f"Kaggle credentials file has incorrect permissions: {oct(mode)}")
+                    logger.warning("For security, please run: chmod 600 ~/.kaggle/kaggle.json")
+                    # Still return True, but warn user about insecure permissions
+                
+                logger.info(f"Kaggle credentials found at: {kaggle_json_path}")
+            except Exception as e:
+                logger.warning(f"Could not check file permissions: {str(e)}")
+        else:
+            logger.info(f"Kaggle credentials found at: {kaggle_json_path}")
+        return True
+    
+    # Check Windows-specific path
+    if os.name == 'nt':  # Windows systems
+        # Try Windows-specific path formats
+        win_username = os.environ.get('USERNAME')
+        win_paths = [
+            f"C:\\Users\\{win_username}\\.kaggle\\kaggle.json",
+            os.path.join(os.environ.get('USERPROFILE', ''), '.kaggle', 'kaggle.json')
+        ]
+        
+        for win_path in win_paths:
+            if os.path.exists(win_path):
+                logger.info(f"Kaggle credentials found at Windows path: {win_path}")
+                return True
+            else:
+                logger.debug(f"Checked Windows path (not found): {win_path}")
+    else:  # Additional Unix/Linux paths to check
+        # Try common Linux username environment variables
+        linux_username = os.environ.get('USER') or os.environ.get('LOGNAME')
+        if linux_username:
+            linux_paths = [
+                f"/home/{linux_username}/.kaggle/kaggle.json",
+                f"/var/lib/{linux_username}/.kaggle/kaggle.json"  # For service accounts
+            ]
+            
+            for linux_path in linux_paths:
+                if os.path.exists(linux_path):
+                    logger.info(f"Kaggle credentials found at Linux path: {linux_path}")
+                    return True
+                else:
+                    logger.debug(f"Checked Linux path (not found): {linux_path}")
     
     # Check if env vars are set
     env_vars_set = os.environ.get('KAGGLE_USERNAME') and os.environ.get('KAGGLE_KEY')
     
-    return json_exists or env_vars_set
+    if env_vars_set:
+        logger.info("Kaggle credentials found in environment variables")
+        return True
+    
+    # Log that no credentials were found
+    logger.warning("No Kaggle credentials found in any location")
+    return False
 
 # Function to safely import Kaggle without triggering authentication errors
 def safe_import_kaggle():

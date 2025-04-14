@@ -21,7 +21,7 @@ services:
     networks:
       - soccer-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8000/health || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 5
@@ -36,9 +36,9 @@ services:
     volumes:
       - ./ui:/app/ui
       - ./config:/app/config
+      - ./.kaggle:/root/.kaggle  # Mount .kaggle directory for credentials
     depends_on:
-      app:
-        condition: service_healthy
+      - app
     command: streamlit run /app/ui/app.py --server.port=8501 --server.address=0.0.0.0
     networks:
       - soccer-net
