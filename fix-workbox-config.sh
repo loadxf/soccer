@@ -1,31 +1,17 @@
 #!/bin/bash
-# Script to fix workbox configuration issue
+# Script to fix workbox configuration issues
 
-echo "Fixing workbox configuration issue..."
+set -e
 
-# Create workbox config file with correct properties
-echo "Creating proper workbox-config.js file..."
-cat > src/frontend/workbox-config.js << 'EOF'
-module.exports = {
-  globDirectory: "build/",
-  globPatterns: [
-    "**/*.{json,ico,html,png,txt,css,js,svg,woff2}"
-  ],
-  swDest: "build/serviceWorker.js",
-  swSrc: "src/serviceWorker.js",
-  // Using the correct property name for URL parameters
-  dontCacheBustURLsMatching: new RegExp('.+\\.[a-f0-9]{8}\\..+'),
-  // Other configurations
-  maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
-};
-EOF
+echo "Fixing workbox configuration..."
 
-echo "Removing the postbuild command temporarily..."
-sed -i 's/"postbuild": "workbox injectManifest workbox-config.js"/"postbuild": "echo Skipping workbox for now"/' src/frontend/package.json
+# Backup the original file
+cp src/frontend/workbox-config.js src/frontend/workbox-config.js.bak
 
-echo "Rebuilding frontend..."
-docker compose up -d --build frontend
+# Fix the property name in workbox-config.js
+sed -i 's/ignoreURLParametersMatching:/dontCacheBustURLsMatching:/g' src/frontend/workbox-config.js
 
-echo -e "\nWorkbox config has been fixed!"
-echo "Check logs with:"
-echo "docker compose logs frontend" 
+echo "Workbox configuration fixed!"
+echo 
+echo "To rebuild the frontend container, run:"
+echo "docker compose up -d --build frontend" 
