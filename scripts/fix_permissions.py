@@ -21,29 +21,37 @@ logger = logging.getLogger("fix-permissions")
 # Get the project root directory
 script_dir = Path(__file__).resolve().parent
 project_root = script_dir.parent
+sys.path.append(str(project_root))
+
+# Import DATA_DIR from config
+try:
+    from config.default_config import DATA_DIR
+except ImportError:
+    # Fallback definition if import fails
+    DATA_DIR = project_root / "data"
 
 # Define data directories that need to exist
 data_dirs = [
-    "data/raw",
-    "data/raw/football_data",
-    "data/processed",
-    "data/interim",
-    "data/external",
-    "data/kaggle_imports",
-    "data/uploads",
-    "data/fixtures",
-    "data/models",
-    "data/training",
-    "data/predictions",
-    "data/explainability",
-    "data/features",
-    "data/augmented"
+    "raw",
+    "raw/football_data",
+    "processed",
+    "interim",
+    "external",
+    "kaggle_imports",
+    "uploads",
+    "fixtures",
+    "models",
+    "training",
+    "predictions",
+    "explainability",
+    "features",
+    "augmented"
 ]
 
 def ensure_dirs_exist():
     """Create all required directories."""
     for dir_path in data_dirs:
-        full_path = project_root / dir_path
+        full_path = DATA_DIR / dir_path
         try:
             os.makedirs(full_path, exist_ok=True)
             logger.info(f"Created/verified directory: {full_path}")
@@ -52,10 +60,9 @@ def ensure_dirs_exist():
 
 def ensure_permissions():
     """Ensure directories have write permissions."""
-    data_dir = project_root / "data"
     try:
         # Try to make all data directories writable
-        for root, dirs, files in os.walk(data_dir):
+        for root, dirs, files in os.walk(DATA_DIR):
             for d in dirs:
                 try:
                     dir_path = os.path.join(root, d)
@@ -70,7 +77,7 @@ def test_write_access():
     """Test write access to each directory."""
     results = {}
     for dir_path in data_dirs:
-        full_path = project_root / dir_path
+        full_path = DATA_DIR / dir_path
         test_file = full_path / "test_write_access.txt"
         try:
             with open(test_file, 'w') as f:
@@ -86,7 +93,7 @@ def test_write_access():
 
 def ensure_registry_files():
     """Ensure dataset registry files exist."""
-    registry_file = project_root / "data" / "dataset_registry.json"
+    registry_file = DATA_DIR / "dataset_registry.json"
     if not registry_file.exists():
         try:
             with open(registry_file, 'w') as f:
@@ -98,12 +105,12 @@ def ensure_registry_files():
 def fix_registry_permissions():
     """Fix permissions for registry files."""
     files_to_fix = [
-        "data/dataset_registry.json",
-        "data/datasets.json"
+        "dataset_registry.json",
+        "datasets.json"
     ]
     
     for file_path in files_to_fix:
-        full_path = project_root / file_path
+        full_path = DATA_DIR / file_path
         if full_path.exists():
             try:
                 os.chmod(full_path, 0o666)  # Make file writable

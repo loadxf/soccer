@@ -15,7 +15,7 @@ from colorama import init, Fore, Style
 # Initialize colorama
 init()
 
-API_PORT = 8080
+API_PORT = 8000
 UI_PORT = 8501
 
 def print_header(text):

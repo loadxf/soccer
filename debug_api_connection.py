@@ -16,15 +16,26 @@ try:
     print(f"REQUEST_TIMEOUT: {REQUEST_TIMEOUT}")
     print()
     
-    # Try direct health check using requests
-    print("Testing direct API connection:")
+    # Try direct health check using requests with both endpoint patterns
+    print("Testing direct API connection with different endpoints:")
+    
+    # Test the /health endpoint
     try:
-        direct_url = "http://127.0.0.1:8080/api/v1/health"
+        direct_url = "http://127.0.0.1:8000/health"
         response = requests.get(direct_url, timeout=5)
         print(f"Direct connection to {direct_url}: {response.status_code}")
         print(f"Response: {response.json()}")
     except Exception as e:
-        print(f"Direct connection failed: {e}")
+        print(f"Direct connection to /health failed: {e}")
+    
+    # Test the /api/v1/health endpoint
+    try:
+        api_v1_url = "http://127.0.0.1:8000/api/v1/health"
+        response = requests.get(api_v1_url, timeout=5)
+        print(f"Direct connection to {api_v1_url}: {response.status_code}")
+        print(f"Response: {response.json()}")
+    except Exception as e:
+        print(f"Direct connection to /api/v1/health failed: {e}")
     print()
     
     # Try health check using the API service

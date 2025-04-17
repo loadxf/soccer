@@ -17,7 +17,8 @@ import {
   MenuItem,
   Tooltip,
   useMediaQuery,
-  useTheme
+  useTheme,
+  Chip
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -27,12 +28,14 @@ import {
   ShowChart as PredictionsIcon,
   Equalizer as VisualizationsIcon,
   AccountCircle,
-  ChevronLeft
+  ChevronLeft,
+  CloudOff,
+  Cloud
 } from '@mui/icons-material';
 import useAuth from '../hooks/useAuth';
 import SportsIcon from '@mui/icons-material/Sports';
 
-const Layout = () => {
+const Layout = ({ apiStatus }) => {
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -144,6 +147,20 @@ const Layout = () => {
           >
             {isMobile ? 'Soccer Predictions' : 'Soccer Prediction System'}
           </Typography>
+          
+          {/* API Status Indicator */}
+          {apiStatus && (
+            <Tooltip title={apiStatus.online ? "API Connected" : "API Disconnected"}>
+              <Chip
+                icon={apiStatus.online ? <Cloud fontSize="small" /> : <CloudOff fontSize="small" />}
+                label={apiStatus.online ? "API Online" : "API Offline"}
+                color={apiStatus.online ? "success" : "error"}
+                size="small"
+                sx={{ mr: 2 }}
+              />
+            </Tooltip>
+          )}
+          
           {user && (
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <Tooltip title="Account settings">
@@ -209,6 +226,16 @@ const Layout = () => {
             ))}
           </List>
           
+          {/* Display API status in drawer footer when offline */}
+          {apiStatus && !apiStatus.online && (
+            <Box sx={{ p: 2, bgcolor: 'error.light', color: 'error.contrastText', textAlign: 'center', mt: 'auto', mb: 2, mx: 2, borderRadius: 1 }}>
+              <CloudOff fontSize="small" sx={{ verticalAlign: 'middle', mr: 1 }} />
+              <Typography variant="body2" component="span">
+                API Offline - Limited functionality
+              </Typography>
+            </Box>
+          )}
+          
           <Box sx={{ mt: 'auto', p: 2 }}>
             {user && (
               <Box sx={{ display: 'flex', alignItems: 'center', p: 1 }}>
@@ -248,29 +275,34 @@ const Layout = () => {
             '& .MuiMenuItem-root': {
               px: 2,
               py: 1,
-            },
+            }
           },
         }}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
-        <MenuItem onClick={handleLogout}>Logout</MenuItem>
+        <MenuItem onClick={handleProfileMenuClose}>
+          Profile
+        </MenuItem>
+        <MenuItem onClick={handleProfileMenuClose}>
+          Settings
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={handleLogout}>
+          Logout
+        </MenuItem>
       </Menu>
       
-      <Box 
-        component="main" 
+      <Box
+        component="main"
         sx={{ 
           flexGrow: 1, 
-          p: { xs: 2, sm: 3 }, 
-          width: { sm: `calc(100% - ${drawerOpen && !isMobile ? drawerWidth : 0}px)` },
-          marginLeft: drawerOpen && !isMobile ? `${drawerWidth}px` : 0,
-          transition: theme => theme.transitions.create(['margin', 'width'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.leavingScreen,
-          }),
+          p: 3, 
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+          ml: { md: `${drawerWidth}px` },
+          pt: { xs: 8, sm: 9 } 
         }}
       >
-        <Toolbar />
         <Outlet />
       </Box>
     </Box>

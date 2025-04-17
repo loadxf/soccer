@@ -58,7 +58,9 @@ WEIGHTING_STRATEGIES = {
         model_id: 1.0 / (list(sorted(models, key=lambda m: perf[m].get("accuracy", 0), reverse=True)).index(model_id) + 1)
         for model_id in models
     },
-    "dynamic": None  # Will be implemented separately
+    "dynamic": None,  # Will be implemented separately
+    "recency": None,  # Will be implemented separately
+    "context_aware": None  # Will be implemented separately
 }
 
 
@@ -72,6 +74,8 @@ class EnsemblePredictor:
     - Stacking: Uses a meta-model to combine predictions
     - Blending: Trains on different subsets of data
     - Boosting-based ensembles: Sequential model training
+    - Dynamic weighting: Adjusts weights based on recent performance
+    - Context-aware: Specializes model selection based on match context
     """
     
     ENSEMBLE_TYPES = [
@@ -80,7 +84,9 @@ class EnsemblePredictor:
         "blending", 
         "calibrated_voting",
         "time_weighted",
-        "performance_weighted"
+        "performance_weighted",
+        "dynamic_weighting",
+        "context_aware"
     ]
     
     def __init__(self, 
@@ -210,140 +216,92 @@ class EnsemblePredictor:
         logger.info(f"Updated ensemble model weights: {self.weights}")
     
     def train(self, X: np.ndarray, y: np.ndarray, 
-              validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> dict:
+              validation_data: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+              context_features: Optional[np.ndarray] = None) -> dict:
         """
-        Train the ensemble model.
-        
-        For voting ensembles, this calibrates the weights based on validation performance.
-        For stacking ensembles, this trains the meta-model.
-        For blending ensembles, this creates and trains the blending models.
+        Train the ensemble.
         
         Args:
-            X: Training features
-            y: Training labels
-            validation_data: Tuple of (X_val, y_val) for validation
+            X: Feature matrix
+            y: Target labels
+            validation_data: Optional validation data tuple (X_val, y_val)
+            context_features: Optional context features for context-aware model selection
             
         Returns:
             Dictionary with training results
         """
+        logger.info(f"Training {self.ensemble_type} ensemble with {len(self.models)} models")
+        
         if len(self.models) == 0:
-            raise ValueError("No models in ensemble. Add models before training.")
+            logger.error("No models in ensemble, cannot train")
+            return {"error": "No models in ensemble"}
         
-        training_results = {}
+        # For stacking and blending, we need validation data
+        if self.ensemble_type in ["stacking", "blending"] and validation_data is None:
+            # Split the data if validation_data is not provided
+            from sklearn.model_selection import train_test_split
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.3, random_state=42)
+            validation_data = (X_val, y_val)
+        else:
+            X_train, y_train = X, y
+            X_val, y_val = validation_data if validation_data else (None, None)
         
-        if self.ensemble_type == "voting":
-            # For voting ensemble, we might adjust weights based on validation performance
-            if validation_data is not None:
-                X_val, y_val = validation_data
-                self._calibrate_weights(X_val, y_val)
-                training_results["calibrated_weights"] = self.weights.tolist()
-        
-        elif self.ensemble_type == "stacking":
-            # For stacking, train the meta-model
-            meta_features = self._get_stacking_features(X)
-            self.meta_model.fit(meta_features, y)
+        # Extract context features if not provided
+        if context_features is None and self.ensemble_type == "context_aware":
+            context_features = self._prepare_context_features(X_train)
             
-            if validation_data is not None:
-                X_val, y_val = validation_data
-                meta_val_features = self._get_stacking_features(X_val)
-                val_pred = self.meta_model.predict(meta_val_features)
-                val_pred_proba = self.meta_model.predict_proba(meta_val_features)
-                
-                # Calculate validation metrics
-                training_results["val_accuracy"] = accuracy_score(y_val, val_pred)
-                training_results["val_log_loss"] = log_loss(y_val, val_pred_proba)
-                precision, recall, f1, _ = precision_recall_fscore_support(
-                    y_val, val_pred, average='macro'
-                )
-                training_results["val_precision"] = precision
-                training_results["val_recall"] = recall
-                training_results["val_f1"] = f1
+            # Also extract validation context features
+            if X_val is not None:
+                val_context_features = self._prepare_context_features(X_val)
         
+        # Train based on ensemble type
+        if self.ensemble_type == "stacking":
+            # For stacking, train a meta-model using base model predictions
+            self._train_stacking(X_train, y_train, X_val, y_val)
+            
         elif self.ensemble_type == "blending":
-            # For blending, split data and train models on different subsets
-            X_train, X_blend, y_train, y_blend = train_test_split(X, y, test_size=0.5, random_state=42)
+            # For blending, train on different data subsets
+            self._train_blending(X_train, y_train)
             
-            # Train individual models on training data
-            self.blend_models = []
-            for i, model in enumerate(self.models):
-                model_copy = joblib.loads(joblib.dumps(model))  # Deep copy
-                model_copy.train(X_train, y_train)
-                self.blend_models.append(model_copy)
-            
-            # Train meta-model on blending data
-            blend_features = np.zeros((X_blend.shape[0], len(self.models) * 3))
-            for i, model in enumerate(self.blend_models):
-                pred_proba = model.predict_proba(X_blend)
-                blend_features[:, i*3:(i+1)*3] = pred_proba
-            
-            self.meta_model.fit(blend_features, y_blend)
-            
-            # Calculate validation metrics if provided
-            if validation_data is not None:
-                X_val, y_val = validation_data
-                val_pred, val_pred_proba = self._blend_predict(X_val)
-                
-                training_results["val_accuracy"] = accuracy_score(y_val, val_pred)
-                training_results["val_log_loss"] = log_loss(y_val, val_pred_proba)
-                precision, recall, f1, _ = precision_recall_fscore_support(
-                    y_val, val_pred, average='macro'
-                )
-                training_results["val_precision"] = precision
-                training_results["val_recall"] = recall
-                training_results["val_f1"] = f1
-        
         elif self.ensemble_type == "calibrated_voting":
-            # For calibrated voting, calculate model performances on validation data
-            if validation_data is None:
-                # Split training data to create validation set if not provided
-                X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-                validation_data = (X_val, y_val)
-            else:
-                X_val, y_val = validation_data
-            
+            # For calibrated voting, calibrate base model probabilities
             self._calibrate_weights(X_val, y_val)
-            training_results["calibrated_weights"] = self.weights.tolist()
             
         elif self.ensemble_type == "time_weighted":
-            # For time-weighted ensemble, initialize time weights
-            self.time_weights = np.ones(len(self.models))
-            self.last_update = datetime.now()
-            
-            if validation_data is not None:
-                X_val, y_val = validation_data
-                self._calibrate_weights(X_val, y_val)
-                
-            training_results["initial_weights"] = self.weights.tolist()
-            training_results["time_weights"] = self.time_weights.tolist()
+            # For time-weighted, calculate weights based on recency
+            self._calculate_time_weights(X_val, y_val)
             
         elif self.ensemble_type == "performance_weighted":
-            # For performance-weighted, calculate detailed performance metrics
-            if validation_data is None:
-                # Split training data to create validation set if not provided
-                X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-                validation_data = (X_val, y_val)
-            else:
-                X_val, y_val = validation_data
-                
+            # For performance-weighted, calculate weights based on performance metrics
             self._calculate_performance_weights(X_val, y_val)
-            training_results["performance_weights"] = self.weights.tolist()
             
-        # Add overall ensemble performance on validation data if available
-        if validation_data is not None:
-            X_val, y_val = validation_data
-            val_pred = self.predict(X_val)
-            val_pred_proba = self.predict_proba(X_val)
-            
-            training_results["ensemble_val_accuracy"] = accuracy_score(y_val, val_pred)
-            training_results["ensemble_val_log_loss"] = log_loss(y_val, val_pred_proba)
-            precision, recall, f1, _ = precision_recall_fscore_support(
-                y_val, val_pred, average='macro'
-            )
-            training_results["ensemble_val_precision"] = precision
-            training_results["ensemble_val_recall"] = recall
-            training_results["ensemble_val_f1"] = f1
+        elif self.ensemble_type == "dynamic_weighting":
+            # For dynamic weighting, calculate weights with recency bias
+            self._calculate_dynamic_weights(X_val, y_val)
         
-        return training_results
+        elif self.ensemble_type == "context_aware":
+            # For context-aware, train a model to select the best model based on context
+            self._train_context_model(X_train, y_train, context_features)
+            
+            # Evaluate on validation data if available
+            if X_val is not None and y_val is not None and val_context_features is not None:
+                context_weights = self.get_context_specific_weights(val_context_features)
+                logger.info(f"Context-aware validation weights shape: {context_weights.shape}")
+        
+        # Update model info
+        self.model_info["trained"] = True
+        self.model_info["trained_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.model_info["training_samples"] = len(X_train)
+        
+        if validation_data:
+            self.model_info["validation_samples"] = len(X_val)
+        
+        return {
+            "ensemble_type": self.ensemble_type,
+            "n_models": len(self.models),
+            "n_samples": len(X_train),
+            "trained_at": self.model_info["trained_at"]
+        }
     
     def _calibrate_weights(self, X_val: np.ndarray, y_val: np.ndarray) -> None:
         """
@@ -460,30 +418,40 @@ class EnsemblePredictor:
         
         return pred, pred_proba
     
-    def predict(self, X: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray, context_features: Optional[np.ndarray] = None) -> np.ndarray:
         """
-        Generate class predictions using the ensemble.
+        Make predictions with the ensemble.
         
         Args:
-            X: Input features
+            X: Feature matrix
+            context_features: Optional context features for context-aware model selection
             
         Returns:
-            Array of class predictions
+            np.ndarray: Predicted classes
         """
         if len(self.models) == 0:
-            raise ValueError("No models in ensemble. Add models before predicting.")
+            raise ValueError("No models in ensemble")
         
-        if self.ensemble_type == "stacking":
-            meta_features = self._get_stacking_features(X)
-            return self.meta_model.predict(meta_features)
+        # Extract context features if needed
+        if context_features is None and self.ensemble_type == "context_aware":
+            context_features = self._prepare_context_features(X)
         
+        # Get predicted probabilities
+        if self.ensemble_type == "context_aware" and context_features is not None:
+            # Get context-specific weights for each sample
+            context_weights = self.get_context_specific_weights(context_features)
+            proba = self._predict_with_context_weights(X, context_weights)
         elif self.ensemble_type == "blending":
-            pred, _ = self._blend_predict(X)
-            return pred
+            proba, _ = self._blend_predict(X)
+        elif self.ensemble_type in ["stacking", "calibrated_voting", "time_weighted", 
+                                   "performance_weighted", "dynamic_weighting"]:
+            proba = self._get_weighted_probabilities(X)
+        else:
+            # Standard voting ensemble
+            proba = self._get_weighted_probabilities(X)
         
-        # For voting ensembles and others, use weighted voting
-        all_probs = self._get_weighted_probabilities(X)
-        return np.argmax(all_probs, axis=1)
+        # Return class with highest probability
+        return np.argmax(proba, axis=1)
     
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
@@ -759,87 +727,391 @@ class EnsemblePredictor:
         return apply_feature_pipeline(df, self.feature_pipeline, target_col)
     
     def predict_match(self, home_team_id: int, away_team_id: int, 
-                      features: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                      features: Optional[Dict[str, Any]] = None, 
+                      include_context: bool = True) -> Dict[str, Any]:
         """
-        Predict the outcome of a specific match.
+        Predict a soccer match outcome.
         
         Args:
             home_team_id: ID of the home team
             away_team_id: ID of the away team
-            features: Additional features for the match
+            features: Optional additional features
+            include_context: Whether to include context-aware model selection
             
         Returns:
-            Dictionary with match prediction results
+            Dict[str, Any]: Prediction result
         """
         if len(self.models) == 0:
-            raise ValueError("No models in ensemble. Add models before predicting matches.")
+            raise ValueError("No models in ensemble")
+        
+        # Create feature dictionary if not provided
+        if features is None:
+            features = {}
+        
+        # Add team IDs to features
+        features['home_team_id'] = home_team_id
+        features['away_team_id'] = away_team_id
+        
+        # Convert features to DataFrame for processing
+        df = pd.DataFrame([features])
+        
+        # Process data if pipeline is available
+        if self.feature_pipeline:
+            processed_X = self.pipeline_transform(df)
+        else:
+            # Basic processing: convert to numpy array
+            processed_X = np.array([list(features.values())])
+        
+        # Extract context features if needed
+        if self.ensemble_type == "context_aware" and include_context:
+            context_features = self._prepare_context_features(processed_X)
             
-        # Create feature dataset for the match
-        match_data = {
-            "home_team_id": home_team_id,
-            "away_team_id": away_team_id
-        }
-        
-        # Add additional features if provided
-        if features:
-            match_data.update(features)
-        
-        # Convert to DataFrame
-        match_df = pd.DataFrame([match_data])
-        
-        # Process data
-        X, _ = self.process_data(match_df, target_col=None)
-        
-        # Make prediction
-        pred_proba = self.predict_proba(X)[0]
-        pred_class = np.argmax(pred_proba)
-        
-        # Map class index to outcome
-        outcomes = {0: "away_win", 1: "draw", 2: "home_win"}
-        outcome = outcomes[pred_class]
-        
-        # Get individual model predictions
-        model_predictions = []
-        for i, model in enumerate(self.models):
-            model_pred_proba = model.predict_proba(X)[0]
-            model_pred_class = np.argmax(model_pred_proba)
-            model_outcome = outcomes[model_pred_class]
+            # Get context-specific weights
+            context_weights = self.get_context_specific_weights(context_features)
             
-            weight = float(self.weights[i]) if self.weights is not None else 1.0/len(self.models)
-            
-            model_predictions.append({
-                "model_type": getattr(model, "model_type", f"model_{i}"),
-                "outcome": model_outcome,
-                "probabilities": {
-                    "home_win": float(model_pred_proba[2]),
-                    "draw": float(model_pred_proba[1]),
-                    "away_win": float(model_pred_proba[0])
-                },
-                "weight": weight
-            })
+            # Make prediction using context-specific weights
+            proba = self._predict_with_context_weights(processed_X, context_weights)
+        else:
+            # Standard prediction
+            proba = self.predict_proba(processed_X)
         
-        # Create prediction result
+        # Convert probabilities to prediction result
+        pred_class = np.argmax(proba[0])
+        
+        # Map prediction class to result
+        result_map = {0: 'home_win', 1: 'draw', 2: 'away_win'}
+        result = result_map.get(pred_class, str(pred_class))
+        
+        # Create prediction result dictionary
         prediction = {
-            "match": {
-                "home_team_id": home_team_id,
-                "away_team_id": away_team_id
+            'home_team_id': home_team_id,
+            'away_team_id': away_team_id,
+            'result': result,
+            'probabilities': {
+                'home_win': float(proba[0, 0]) if proba.shape[1] > 0 else None,
+                'draw': float(proba[0, 1]) if proba.shape[1] > 1 else None,
+                'away_win': float(proba[0, 2]) if proba.shape[1] > 2 else None
             },
-            "prediction": {
-                "outcome": outcome,
-                "probabilities": {
-                    "home_win": float(pred_proba[2]),
-                    "draw": float(pred_proba[1]),
-                    "away_win": float(pred_proba[0])
-                }
-            },
-            "ensemble_info": {
-                "ensemble_type": self.ensemble_type,
-                "model_count": len(self.models)
-            },
-            "model_predictions": model_predictions
+            'ensemble_type': self.ensemble_type,
+            'predicted_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
+        
+        # Add model contributions for interpretability
+        if self.ensemble_type == "context_aware" and include_context:
+            model_contributions = []
+            
+            for i, model in enumerate(self.models):
+                model_type = getattr(model, 'model_type', f'model_{i}')
+                weight = float(context_weights[0, i])
+                
+                model_contributions.append({
+                    'model_type': model_type,
+                    'weight': weight
+                })
+            
+            prediction['model_contributions'] = model_contributions
         
         return prediction
+
+    def _calculate_dynamic_weights(self, X_val: np.ndarray, y_val: np.ndarray, 
+                                  recency_factor: float = 0.9, window_size: int = 10) -> None:
+        """
+        Calculate dynamic weights based on the most recent predictions.
+        
+        This implements a recency-weighted model evaluation, giving higher weight to
+        models that performed well in the most recent timeframe.
+        
+        Args:
+            X_val: Validation features
+            y_val: Validation labels
+            recency_factor: Weight decay factor for older observations (0-1)
+            window_size: Number of most recent observations to use for local weight calculation
+        """
+        logger.info("Calculating dynamic model weights")
+
+        if len(self.models) == 0:
+            logger.warning("No models in ensemble, cannot calculate dynamic weights")
+            return
+
+        # Sort validation data by time if possible
+        if hasattr(X_val, 'shape') and len(X_val.shape) == 2 and X_val.shape[1] > 0:
+            # Try to find datetime column for sorting
+            date_col_idx = None
+            for i in range(X_val.shape[1]):
+                if hasattr(X_val[:, i], 'dtype') and pd.api.types.is_datetime64_dtype(X_val[:, i].dtype):
+                    date_col_idx = i
+                    break
+            
+            if date_col_idx is not None:
+                # Sort by date
+                sort_idx = np.argsort(X_val[:, date_col_idx])
+                X_val = X_val[sort_idx]
+                y_val = y_val[sort_idx]
+
+        # Get predictions from each model
+        model_preds = []
+        model_probs = []
+        
+        for model in self.models:
+            if hasattr(model, 'predict'):
+                preds = model.predict(X_val)
+                model_preds.append(preds)
+            
+            if hasattr(model, 'predict_proba'):
+                probs = model.predict_proba(X_val)
+                model_probs.append(probs)
+            elif hasattr(model, 'predict') and not hasattr(model, 'predict_proba'):
+                # For models without predict_proba, create one-hot encoded probs
+                probs = np.zeros((len(y_val), len(np.unique(y_val))))
+                for i, pred in enumerate(preds):
+                    probs[i, pred] = 1.0
+                model_probs.append(probs)
+        
+        # Calculate recency-weighted performance for each model
+        n_samples = len(y_val)
+        n_models = len(self.models)
+        
+        # Initialize performance metrics
+        accuracy = np.zeros(n_models)
+        log_loss_vals = np.zeros(n_models)
+        
+        # Calculate exponential decay weights for recency
+        decay_weights = np.power(recency_factor, np.arange(n_samples-1, -1, -1))
+        decay_weights /= decay_weights.sum()  # Normalize to sum to 1
+        
+        # Calculate performance metrics
+        for i in range(n_models):
+            # Accuracy with recency weighting
+            correct = (model_preds[i] == y_val).astype(float)
+            accuracy[i] = np.sum(correct * decay_weights)
+            
+            # Log loss with recency weighting if probability predictions are available
+            if i < len(model_probs):
+                # Get one-hot encoded true labels
+                y_one_hot = np.zeros((n_samples, model_probs[i].shape[1]))
+                for j, label in enumerate(y_val):
+                    y_one_hot[j, label] = 1
+                
+                # Calculate log loss for each sample
+                sample_losses = -np.sum(y_one_hot * np.log(np.clip(model_probs[i], 1e-15, 1.0)), axis=1)
+                
+                # Apply recency weighting
+                log_loss_vals[i] = np.sum(sample_losses * decay_weights)
+        
+        # Calculate sliding window performance (for recent matches only)
+        if window_size > 0 and n_samples >= window_size:
+            recent_accuracy = np.zeros(n_models)
+            
+            for i in range(n_models):
+                recent_correct = (model_preds[i][-window_size:] == y_val[-window_size:]).astype(float)
+                recent_accuracy[i] = recent_correct.mean()
+            
+            # Combine global and recent performance
+            combined_accuracy = (accuracy + recent_accuracy) / 2
+        else:
+            combined_accuracy = accuracy
+        
+        # Normalize to create weights
+        weights = combined_accuracy / combined_accuracy.sum() if combined_accuracy.sum() > 0 else np.ones(n_models) / n_models
+        
+        # Store as instance weights
+        self.weights = weights.tolist()
+        
+        # Store performance metrics for later reference
+        self.model_performance = {
+            f"model_{i}": {
+                "recency_weighted_accuracy": float(accuracy[i]),
+                "recency_weighted_log_loss": float(log_loss_vals[i]) if i < len(model_probs) else None,
+                "recent_window_accuracy": float(recent_accuracy[i]) if window_size > 0 and n_samples >= window_size else None,
+                "combined_weight": float(weights[i])
+            } for i in range(n_models)
+        }
+        
+        logger.info(f"Dynamic weights calculated: {self.weights}")
+
+    def _prepare_context_features(self, X: np.ndarray) -> np.ndarray:
+        """
+        Extract context features for context-aware model selection.
+        
+        Args:
+            X: Input features
+            
+        Returns:
+            Context features for model selection
+        """
+        # Extract context features (e.g., home team strength, away team strength, etc.)
+        if not hasattr(X, 'shape') or len(X.shape) < 2:
+            return np.zeros((len(X) if hasattr(X, '__len__') else 1, 1))
+        
+        # Try to identify context columns
+        context_features = []
+        
+        # If X is a DataFrame, use column names
+        if hasattr(X, 'columns'):
+            context_cols = []
+            for col in X.columns:
+                if any(term in str(col).lower() for term in 
+                       ['form', 'strength', 'elo', 'importance', 'rank', 'position', 'home_', 'away_']):
+                    context_cols.append(col)
+            
+            if context_cols:
+                context_features = X[context_cols].values
+        
+        # If X is a numpy array or context features couldn't be identified, use a subset of features
+        if not context_features:
+            # Use first few features as context (simple heuristic)
+            n_context = min(5, X.shape[1])
+            context_features = X[:, :n_context]
+        
+        return context_features
+    
+    def _train_context_model(self, X: np.ndarray, y: np.ndarray, context_features: np.ndarray) -> None:
+        """
+        Train a meta-model to select the best model weights based on context.
+        
+        Args:
+            X: Input features
+            y: Target labels
+            context_features: Context features for model selection
+        """
+        logger.info("Training context-aware model selection")
+        
+        if len(self.models) == 0:
+            logger.warning("No models in ensemble, cannot train context model")
+            return
+        
+        # Get predictions from each model
+        model_probs = []
+        for model in self.models:
+            if hasattr(model, 'predict_proba'):
+                probs = model.predict_proba(X)
+                model_probs.append(probs)
+        
+        if not model_probs:
+            logger.warning("No probability predictions available, cannot train context model")
+            return
+        
+        # For each sample, determine which model performed best
+        n_samples = len(y)
+        n_models = len(model_probs)
+        
+        # Calculate log loss for each model for each sample
+        model_losses = np.zeros((n_samples, n_models))
+        
+        for i in range(n_models):
+            # Get one-hot encoded true labels
+            y_one_hot = np.zeros((n_samples, model_probs[i].shape[1]))
+            for j, label in enumerate(y):
+                y_one_hot[j, label] = 1
+            
+            # Calculate log loss for each sample
+            sample_losses = -np.sum(y_one_hot * np.log(np.clip(model_probs[i], 1e-15, 1.0)), axis=1)
+            model_losses[:, i] = sample_losses
+        
+        # For each sample, the best model is the one with minimum loss
+        best_models = np.argmin(model_losses, axis=1)
+        
+        # Train a classifier to predict the best model based on context
+        from sklearn.ensemble import RandomForestClassifier
+        
+        self.context_model = RandomForestClassifier(n_estimators=100, random_state=42)
+        self.context_model.fit(context_features, best_models)
+        
+        # Store feature importance for interpretability
+        if hasattr(self.context_model, 'feature_importances_'):
+            self.context_feature_importance = self.context_model.feature_importances_
+            
+            # Log top feature importances
+            if hasattr(context_features, 'shape') and context_features.shape[1] > 0:
+                top_features = np.argsort(self.context_feature_importance)[::-1]
+                logger.info(f"Top context features: {top_features[:5]}")
+                logger.info(f"Importance values: {self.context_feature_importance[top_features[:5]]}")
+        
+        logger.info("Context-aware model selection trained successfully")
+    
+    def get_context_specific_weights(self, context_features: np.ndarray) -> np.ndarray:
+        """
+        Get model weights specific to the given context.
+        
+        Args:
+            context_features: Context features for model selection
+            
+        Returns:
+            Model weights for the given context
+        """
+        if not hasattr(self, 'context_model') or self.context_model is None:
+            # Fall back to default weights
+            return np.array(self.weights) if self.weights is not None else np.ones(len(self.models)) / len(self.models)
+        
+        # Predict the best model for each context
+        best_models = self.context_model.predict(context_features)
+        
+        # Create one-hot encoded weights (1.0 for best model, 0.0 for others)
+        weights = np.zeros((len(context_features), len(self.models)))
+        for i, model_idx in enumerate(best_models):
+            weights[i, model_idx] = 1.0
+        
+        # Get model probabilities to allow for soft weighting
+        if hasattr(self.context_model, 'predict_proba'):
+            model_probs = self.context_model.predict_proba(context_features)
+            if hasattr(model_probs, 'shape') and model_probs.shape[1] == len(self.models):
+                weights = model_probs
+        
+        return weights
+    
+    def _predict_with_context_weights(self, X: np.ndarray, context_weights: np.ndarray) -> np.ndarray:
+        """
+        Make predictions using context-specific weights.
+        
+        Args:
+            X: Feature matrix
+            context_weights: Weights for each model for each sample
+            
+        Returns:
+            Predicted probabilities
+        """
+        # Get predictions from all models
+        model_probs = []
+        for model in self.models:
+            if hasattr(model, 'predict_proba'):
+                probs = model.predict_proba(X)
+                model_probs.append(probs)
+            else:
+                # For models without predict_proba, create simple probability matrix
+                # This is a fallback and should be avoided in practice
+                preds = model.predict(X)
+                n_classes = len(np.unique(preds))
+                probs = np.zeros((len(X), n_classes))
+                for i, p in enumerate(preds):
+                    probs[i, p] = 1.0
+                model_probs.append(probs)
+        
+        if not model_probs:
+            raise ValueError("No probability predictions available")
+        
+        # Check if all have the same shape
+        n_classes = model_probs[0].shape[1]
+        if not all(p.shape[1] == n_classes for p in model_probs):
+            raise ValueError("Inconsistent number of classes in model predictions")
+        
+        # Initialize combined probabilities
+        combined_proba = np.zeros((len(X), n_classes))
+        
+        # For each sample, compute weighted average of model predictions
+        for i in range(len(X)):
+            sample_weights = context_weights[i]
+            
+            # Normalize weights
+            sample_weights = sample_weights / np.sum(sample_weights) if np.sum(sample_weights) > 0 else np.ones(len(self.models)) / len(self.models)
+            
+            # Compute weighted average
+            for j, model_prob in enumerate(model_probs):
+                combined_proba[i] += sample_weights[j] * model_prob[i]
+        
+        # Normalize probabilities
+        combined_proba = combined_proba / np.sum(combined_proba, axis=1, keepdims=True)
+        
+        return combined_proba
 
 
 def train_ensemble_model(

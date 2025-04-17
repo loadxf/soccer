@@ -107,8 +107,8 @@
     <div class="test-container">
         <h2>API Health Check</h2>
         <div>
-            <button id="testLocalhostHealth">Test localhost:8080</button>
-            <button id="testIpHealth">Test 127.0.0.1:8080</button>
+            <button id="testLocalhostHealth">Test localhost:8000</button>
+            <button id="testIpHealth">Test 127.0.0.1:8000</button>
         </div>
         <div class="results" id="healthResults">Results will appear here...</div>
     </div>
@@ -155,15 +155,15 @@
     <div class="test-container">
         <h2>Connection Summary</h2>
         <div id="summary">
-            <p><span class="status-indicator status-orange"></span> localhost:8080: Waiting for test...</p>
-            <p><span class="status-indicator status-orange"></span> 127.0.0.1:8080: Waiting for test...</p>
+            <p><span class="status-indicator status-orange"></span> localhost:8000: Waiting for test...</p>
+            <p><span class="status-indicator status-orange"></span> 127.0.0.1:8000: Waiting for test...</p>
             <p><span class="status-indicator status-orange"></span> CORS: Waiting for test...</p>
         </div>
         <button id="testAll">Test All Connections</button>
     </div>
 
     <script>
-        const API_PORT = 8080;
+        const API_PORT = 8000;
         
         // Test result display functions
         function showSuccess(elementId, message) {
@@ -270,12 +270,12 @@
                 );
                 
                 // Update the summary
-                updateSummary('cors', isSuccess);
+                updateSummary('localhost', isSuccess);
                 
                 return isSuccess;
             } catch (error) {
                 showResult('corsResults', false, `Error testing CORS - ${error.message}`);
-                updateSummary('cors', false);
+                updateSummary('localhost', false);
                 return false;
             }
         }
@@ -287,13 +287,13 @@
             
             if (type === 'localhost') {
                 summary.innerHTML = summary.innerHTML.replace(
-                    /<span class="status-indicator .*?"><\/span> localhost:8080.*/,
-                    `<span class="status-indicator ${status}"></span> localhost:8080: ${isSuccess ? 'Working' : 'Not working'}`
+                    /<span class="status-indicator .*?"><\/span> localhost:8000.*/,
+                    `<span class="status-indicator ${status}"></span> localhost:8000: ${isSuccess ? 'Working' : 'Not working'}`
                 );
             } else if (type === '127.0.0.1') {
                 summary.innerHTML = summary.innerHTML.replace(
-                    /<span class="status-indicator .*?"><\/span> 127.0.0.1:8080.*/,
-                    `<span class="status-indicator ${status}"></span> 127.0.0.1:8080: ${isSuccess ? 'Working' : 'Not working'}`
+                    /<span class="status-indicator .*?"><\/span> 127.0.0.1:8000.*/,
+                    `<span class="status-indicator ${status}"></span> 127.0.0.1:8000: ${isSuccess ? 'Working' : 'Not working'}`
                 );
             } else if (type === 'cors') {
                 summary.innerHTML = summary.innerHTML.replace(

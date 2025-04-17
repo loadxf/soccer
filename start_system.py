@@ -17,7 +17,7 @@ from pathlib import Path
 
 # Configuration
 API_HOST = "0.0.0.0"
-API_PORT = 8080
+API_PORT = 8000
 API_VERSION = "v1"  # Add the API version
 API_CHECK_URL = f"http://127.0.0.1:{API_PORT}/api/{API_VERSION}/health"
 UI_URL = "http://127.0.0.1:8501?force_reset=true"  # Force session reset
@@ -92,7 +92,7 @@ def start_api():
         print(f"\n⚠️ Port {API_PORT} is in use, but API health check failed!")
         print("This likely means another application is using this port.")
         print("\nOptions:")
-        print("1. Stop the other application using port 8080")
+        print("1. Stop the other application using port 8000")
         print("2. Continue without API (some features won't work)")
         
         try:

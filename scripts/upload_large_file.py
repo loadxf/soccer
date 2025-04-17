@@ -29,8 +29,14 @@ script_dir = Path(__file__).resolve().parent
 project_root = script_dir.parent
 sys.path.append(str(project_root))
 
+# Import DATA_DIR from config
+try:
+    from config.default_config import DATA_DIR
+except ImportError:
+    # Fallback definition if import fails
+    DATA_DIR = project_root / "data"
+
 # Set up data directories
-DATA_DIR = project_root / "data"
 UPLOADS_DIR = DATA_DIR / "uploads"
 REGISTRY_FILE = DATA_DIR / "datasets.json"
 

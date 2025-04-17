@@ -24,11 +24,17 @@ from src.models.training import train_model, train_multiple_models, ensemble_mod
 from src.models.evaluation import evaluate_model_performance, compare_models, analyze_feature_importance
 from src.models.prediction import PredictionService
 
+# Import DATA_DIR from config
+try:
+    from config.default_config import DATA_DIR
+except ImportError:
+    # Fallback definition if import fails
+    DATA_DIR = os.path.join(project_root, "data")
+
 # Setup logger
 logger = get_logger("demo")
 
-# Define paths
-DATA_DIR = os.path.join(project_root, "data")
+# Define derived paths
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 FEATURES_DIR = os.path.join(DATA_DIR, "features")
 DEMO_DIR = os.path.join(DATA_DIR, "demo")

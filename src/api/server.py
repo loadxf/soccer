@@ -21,6 +21,21 @@ from typing import Dict, Any
 from src.utils.logger import get_logger
 from src.api.routes import api_router
 
+# Import API configuration
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+try:
+    from api_config import CORS_ORIGINS
+except ImportError:
+    # Fallback if api_config.py can't be imported
+    CORS_ORIGINS = [
+        "http://localhost:8501",
+        "http://127.0.0.1:8501",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+        "http://app:8000",
+        "http://ui:8501"
+    ]
+
 # Setup logger
 logger = get_logger("api.server")
 
@@ -34,7 +49,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins in development
+    allow_origins=CORS_ORIGINS,  # Use specific origins from config
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

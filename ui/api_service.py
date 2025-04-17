@@ -12,6 +12,7 @@ from pathlib import Path
 from functools import lru_cache
 import logging
 import sys
+import socket
 
 # Add project root to path to allow importing api_config
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -35,17 +36,22 @@ except ImportError:
     # Check if we're running in Docker
     is_docker = os.path.exists('/.dockerenv')
     
+    # Check for remote host in environment
+    remote_host = os.environ.get('REMOTE_API_HOST')
+    if remote_host:
+        API_HOST = remote_host
+        logger.info(f"Using remote host from environment: {API_HOST}")
     # Define API base URL using standard hostname and port
-    if is_docker:
+    elif is_docker:
         API_HOST = "app"  # Use the service name in Docker
     else:
         API_HOST = "localhost"  # Use localhost for non-Docker environments
         
-    API_PORT = 8000  # Correct port for our API (was 8080)
+    API_PORT = int(os.environ.get('API_PORT', 8000))  # Get port from environment or use 8000
     # No /api/v1 prefix
     API_BASE_URL = f"http://{API_HOST}:{API_PORT}"
     BASE_URL = API_BASE_URL
-    REQUEST_TIMEOUT = 10  # 10 seconds timeout for API requests
+    REQUEST_TIMEOUT = int(os.environ.get('API_TIMEOUT', 10))  # Timeout in seconds
     logger.info(f"Using default configuration: {API_BASE_URL}")
     has_config = False
 
@@ -53,10 +59,33 @@ except ImportError:
     def get_alternative_hostname(hostname):
         if hostname == "app":
             return "app"  # Always use the service name in Docker
+        # Don't modify remote hosts
+        if hostname == os.environ.get('REMOTE_API_HOST'):
+            return hostname
         return '127.0.0.1' if hostname == 'localhost' else 'localhost'
 
 # Cache configuration
 CACHE_TTL = 300  # 5 minutes cache TTL
+
+# Log current network details to help with troubleshooting
+def log_network_details():
+    """Log network details for troubleshooting remote connections"""
+    try:
+        hostname = socket.gethostname()
+        local_ip = socket.gethostbyname(hostname)
+        logger.info(f"Current machine hostname: {hostname}")
+        logger.info(f"Current machine local IP: {local_ip}")
+        
+        # Log environment variables related to API connection
+        for env_var in ['REMOTE_API_HOST', 'API_PORT', 'API_HOST']:
+            value = os.environ.get(env_var)
+            if value:
+                logger.info(f"Environment variable {env_var}={value}")
+    except Exception as e:
+        logger.warning(f"Could not log network details: {str(e)}")
+
+# Log network details at module load time to help with debugging
+log_network_details()
 
 def get_api_data(endpoint: str, params: Optional[Dict] = None, cache: bool = True) -> Any:
     """
@@ -87,22 +116,45 @@ def get_api_data(endpoint: str, params: Optional[Dict] = None, cache: bool = Tru
     result = _make_api_request(url, params)
     if result is not None:
         return result
-        
-    # If primary URL fails and it's using localhost, try with 127.0.0.1
-    if "localhost" in BASE_URL:
-        fallback_url = url.replace("localhost", "127.0.0.1")
-        logger.info(f"Primary URL failed, trying fallback URL: {fallback_url}")
-        result = _make_api_request(fallback_url, params)
-        if result is not None:
-            return result
     
-    # If primary URL fails and it's using 127.0.0.1, try with localhost
-    if "127.0.0.1" in BASE_URL:
-        fallback_url = url.replace("127.0.0.1", "localhost")
-        logger.info(f"Primary URL failed, trying fallback URL: {fallback_url}")
+    # Check if we're using a remote host
+    remote_host = os.environ.get('REMOTE_API_HOST')
+    if remote_host and remote_host in url:
+        # If remote host is failing, log a warning and try localhost as a fallback
+        logger.warning(f"Remote API host ({remote_host}) is unavailable. Check network connection and server status.")
+        logger.warning("Possible remote connection issues:")
+        logger.warning("1. Check if the API server is running on the remote host")
+        logger.warning("2. Check firewall rules - make sure port 8000 is open")
+        logger.warning("3. Verify the remote host is reachable via ping or telnet")
+        logger.warning("4. Run ./test_api.sh script to diagnose connectivity issues")
+        
+        fallback_url = url.replace(remote_host, "localhost")
+        logger.info(f"Trying localhost fallback: {fallback_url}")
         result = _make_api_request(fallback_url, params)
         if result is not None:
             return result
+        
+        fallback_url = url.replace(remote_host, "127.0.0.1")
+        logger.info(f"Trying 127.0.0.1 fallback: {fallback_url}")
+        result = _make_api_request(fallback_url, params)
+        if result is not None:
+            return result
+    else:
+        # If primary URL fails and it's using localhost, try with 127.0.0.1
+        if "localhost" in BASE_URL:
+            fallback_url = url.replace("localhost", "127.0.0.1")
+            logger.info(f"Primary URL failed, trying fallback URL: {fallback_url}")
+            result = _make_api_request(fallback_url, params)
+            if result is not None:
+                return result
+        
+        # If primary URL fails and it's using 127.0.0.1, try with localhost
+        if "127.0.0.1" in BASE_URL:
+            fallback_url = url.replace("127.0.0.1", "localhost")
+            logger.info(f"Primary URL failed, trying fallback URL: {fallback_url}")
+            result = _make_api_request(fallback_url, params)
+            if result is not None:
+                return result
             
     # If both URLs fail, return fallback data
     logger.error(f"All API request attempts failed for: {endpoint}")
@@ -116,9 +168,16 @@ def _make_api_request(url: str, params: Optional[Dict] = None) -> Optional[Any]:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
             'Accept-Language': 'en-US,en;q=0.9',
+            'Origin': url.rsplit('/', 1)[0],  # Set origin to base URL
+            'Referer': url.rsplit('/', 1)[0]  # Set referrer to base URL
         }
         
+        logger.info(f"Starting API request to {url}")
+        start_time = time.time()
         response = requests.get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
+        elapsed_time = time.time() - start_time
+        logger.info(f"API request completed in {elapsed_time:.2f} seconds with status {response.status_code}")
+        
         if response.status_code >= 500:
             logger.error(f"API server error: {url} returned {response.status_code}")
             logger.error(f"Response content: {response.text[:200]}")
@@ -141,6 +200,18 @@ def _make_api_request(url: str, params: Optional[Dict] = None) -> Optional[Any]:
         _cache_data(cache_key, data)
         
         return data
+    except requests.exceptions.ConnectTimeout:
+        logger.error(f"Connection timeout when connecting to {url}")
+        logger.error(f"Possible causes: API server not running, network connectivity issues, firewall blocking")
+        return None
+    except requests.exceptions.ReadTimeout:
+        logger.error(f"Read timeout when reading from {url}")
+        logger.error(f"Possible causes: API server overloaded or unresponsive")
+        return None
+    except requests.exceptions.ConnectionError as e:
+        logger.error(f"Connection error to {url}: {str(e)}")
+        logger.error(f"Possible causes: API server not running, network issues, incorrect hostname")
+        return None
     except requests.exceptions.RequestException as e:
         logger.error(f"API request failed: {url} - {str(e)}")
         return None
@@ -314,32 +385,57 @@ class SoccerPredictionAPI:
     @staticmethod
     def check_health() -> Dict:
         """Check if the API is healthy"""
-        # Use direct health endpoint without /api/v1 prefix
-        url = f"{BASE_URL}/health"
-        logger.info(f"Checking API health at: {url}")
+        # Try multiple endpoint patterns to improve reliability
+        endpoints_to_try = [
+            "/health",            # Direct health endpoint without prefix
+            "/api/v1/health",     # Health endpoint with API v1 prefix
+            "/api/health"         # Health endpoint with alternative prefix
+        ]
         
-        try:
-            response = requests.get(url, timeout=REQUEST_TIMEOUT)
-            status_code = response.status_code
-            logger.info(f"Health check status code: {status_code}")
+        last_error = None
+        
+        # Try each endpoint in sequence
+        for endpoint in endpoints_to_try:
+            url = f"{BASE_URL}{endpoint}"
+            logger.info(f"Checking API health at: {url}")
             
-            if status_code == 200:
-                data = response.json()
-                logger.info(f"Health check response: {data}")
-                return {"status": "online", "message": "API is available", "details": data}
-            
-            logger.error(f"API returned non-200 status code: {status_code}")
-            return {"status": "error", "message": f"API returned status code {status_code}"}
-            
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Connection error during health check: {str(e)}")
-            return {"status": "offline", "message": "Could not connect to API server"}
-        except requests.exceptions.Timeout as e:
-            logger.error(f"Timeout during health check: {str(e)}")
-            return {"status": "offline", "message": "API server did not respond in time"}
-        except Exception as e:
-            logger.error(f"Unexpected error during health check: {str(e)}")
-            return {"status": "offline", "message": "API is unavailable"}
+            try:
+                response = requests.get(url, timeout=REQUEST_TIMEOUT)
+                status_code = response.status_code
+                logger.info(f"Health check status code: {status_code}")
+                
+                if status_code == 200:
+                    try:
+                        data = response.json()
+                        logger.info(f"Health check response: {data}")
+                        return {
+                            "status": "online", 
+                            "message": "API is available", 
+                            "details": data,
+                            "endpoint": endpoint
+                        }
+                    except json.JSONDecodeError:
+                        logger.warning(f"Health check endpoint {endpoint} returned non-JSON response")
+                        continue
+                
+                logger.warning(f"API returned non-200 status code for {endpoint}: {status_code}")
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"Connection error during health check for {endpoint}: {str(e)}")
+                last_error = e
+            except requests.exceptions.Timeout as e:
+                logger.warning(f"Timeout during health check for {endpoint}: {str(e)}")
+                last_error = e
+            except Exception as e:
+                logger.warning(f"Unexpected error during health check for {endpoint}: {str(e)}")
+                last_error = e
+        
+        # If we get here, all endpoints failed
+        if last_error:
+            logger.error(f"All health check endpoints failed. Last error: {str(last_error)}")
+            return {"status": "offline", "message": f"Could not connect to API server: {str(last_error)}"}
+        else:
+            logger.error("All health check endpoints failed with non-200 responses")
+            return {"status": "error", "message": "API server is not responding correctly"}
     
     @staticmethod
     def get_teams() -> List[Dict]:

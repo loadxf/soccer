@@ -17,6 +17,7 @@ import joblib
 # Import project components
 from src.utils.logger import get_logger
 from src.models.baseline import BaselineMatchPredictor
+from src.models.time_validation import TimeSeriesSplit, SeasonBasedSplit, MatchDayBasedSplit
 try:
     # Import soccer-specific models
     from src.models.soccer_distributions import DixonColesModel, train_dixon_coles_model
@@ -26,6 +27,24 @@ except ImportError:
 try:
     # Import advanced soccer features
     from src.data.soccer_features import load_or_create_advanced_features
+except ImportError:
+    pass
+
+try:
+    # Import Elo ratings
+    from src.data.elo_ratings import generate_elo_features
+except ImportError:
+    pass
+
+try:
+    # Import match context features
+    from src.data.match_context import generate_match_context_features
+except ImportError:
+    pass
+
+try:
+    # Import sequence models
+    from src.models.sequence_models import SoccerTransformerModel, SequenceDataProcessor
 except ImportError:
     pass
 
@@ -68,8 +87,10 @@ logger = get_logger("models.training")
 FEATURES_DIR = os.path.join(DATA_DIR, "features")
 MODELS_DIR = os.path.join(DATA_DIR, "models")
 TRAINING_DIR = os.path.join(DATA_DIR, "training")
+SEQUENCE_MODELS_DIR = os.path.join(DATA_DIR, "sequence_models")
 os.makedirs(MODELS_DIR, exist_ok=True)
 os.makedirs(TRAINING_DIR, exist_ok=True)
+os.makedirs(SEQUENCE_MODELS_DIR, exist_ok=True)
 
 
 def load_feature_data(dataset_name: str, feature_type: str) -> pd.DataFrame:
@@ -92,12 +113,15 @@ def load_feature_data(dataset_name: str, feature_type: str) -> pd.DataFrame:
     return df
 
 
-def load_advanced_soccer_features(dataset_name: str) -> pd.DataFrame:
+def load_advanced_soccer_features(dataset_name: str, include_elo: bool = True, 
+                                include_match_context: bool = True) -> pd.DataFrame:
     """
     Load or create advanced soccer features.
     
     Args:
         dataset_name: Name of the dataset
+        include_elo: Whether to include Elo rating features
+        include_match_context: Whether to include match context features
         
     Returns:
         pd.DataFrame: DataFrame with advanced soccer features
@@ -137,6 +161,56 @@ def load_advanced_soccer_features(dataset_name: str) -> pd.DataFrame:
         # Create advanced features
         features_df = load_or_create_advanced_features(matches_df, shots_df)
         
+        # Add Elo rating features if requested
+        if include_elo:
+            try:
+                from src.data.elo_ratings import generate_elo_features
+                elo_features = generate_elo_features(matches_df)
+                
+                # Merge Elo features with other features
+                if not features_df.empty and not elo_features.empty:
+                    # Ensure we have common columns for merging
+                    merge_cols = list(set(features_df.columns) & set(elo_features.columns))
+                    if merge_cols:
+                        # Keep only new columns from elo_features
+                        elo_cols_to_add = [col for col in elo_features.columns if col not in features_df.columns 
+                                         or col in ['home_elo_pre', 'away_elo_pre', 'elo_diff']]
+                        features_df = pd.merge(features_df, elo_features[merge_cols + elo_cols_to_add], on=merge_cols, how='left')
+                        logger.info("Added Elo rating features")
+            except (ImportError, Exception) as e:
+                logger.warning(f"Failed to add Elo rating features: {e}")
+        
+        # Add match context features if requested
+        if include_match_context:
+            try:
+                from src.data.match_context import generate_match_context_features
+                
+                # Find clubs data file if available
+                club_files = [f for f in os.listdir(processed_dir) if 'club' in f.lower() or 'team' in f.lower()]
+                clubs_df = None
+                
+                if club_files:
+                    club_file = club_files[0]
+                    club_path = os.path.join(processed_dir, club_file)
+                    clubs_df = pd.read_csv(club_path)
+                
+                # Generate context features
+                context_features = generate_match_context_features(matches_df, clubs_df)
+                
+                # Merge context features with other features
+                if not features_df.empty and not context_features.empty:
+                    # Ensure we have common columns for merging
+                    merge_cols = list(set(features_df.columns) & set(context_features.columns))
+                    if merge_cols:
+                        # Keep only new columns from context_features
+                        context_cols_to_add = [col for col in context_features.columns 
+                                           if col not in features_df.columns 
+                                           or col in ['home_rest_days', 'away_rest_days', 'rest_advantage', 'match_importance']]
+                        features_df = pd.merge(features_df, context_features[merge_cols + context_cols_to_add], on=merge_cols, how='left')
+                        logger.info("Added match context features")
+            except (ImportError, Exception) as e:
+                logger.warning(f"Failed to add match context features: {e}")
+        
         # Save features
         advanced_features_dir = os.path.join(FEATURES_DIR, dataset_name)
         os.makedirs(advanced_features_dir, exist_ok=True)
@@ -157,16 +231,75 @@ def load_advanced_soccer_features(dataset_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def get_cv_splitter(
+    cv_type: str = "random",
+    n_splits: int = 5,
+    test_size: float = 0.2,
+    gap: int = 0,
+    date_column: str = "date",
+    season_column: str = "season",
+    **kwargs
+) -> Union[StratifiedKFold, TimeSeriesSplit, SeasonBasedSplit, MatchDayBasedSplit]:
+    """
+    Get a cross-validation splitter based on the specified type.
+    
+    Args:
+        cv_type: Type of cross-validation ('random', 'time', 'season', or 'matchday')
+        n_splits: Number of splits (folds)
+        test_size: Size of test set
+        gap: Gap between train and test sets (for time-based CV)
+        date_column: Name of date column (for time-based CV)
+        season_column: Name of season column (for season-based CV)
+        **kwargs: Additional arguments for specific CV types
+        
+    Returns:
+        Cross-validation splitter object
+    """
+    if cv_type == "random":
+        return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=kwargs.get('random_state', 42))
+    
+    elif cv_type == "time":
+        return TimeSeriesSplit(
+            n_splits=n_splits,
+            test_size=test_size,
+            gap=gap,
+            max_train_size=kwargs.get('max_train_size', None)
+        )
+    
+    elif cv_type == "season":
+        return SeasonBasedSplit(
+            test_seasons=kwargs.get('test_seasons', 1),
+            max_train_seasons=kwargs.get('max_train_seasons', None),
+            rolling=kwargs.get('rolling', True),
+            season_column=season_column
+        )
+    
+    elif cv_type == "matchday":
+        return MatchDayBasedSplit(
+            n_future_match_days=kwargs.get('n_future_match_days', 1),
+            n_test_periods=kwargs.get('n_test_periods', 10),
+            min_train_match_days=kwargs.get('min_train_match_days', 3),
+            date_column=date_column,
+            season_column=season_column
+        )
+    
+    else:
+        logger.warning(f"Unknown CV type '{cv_type}', falling back to random CV")
+        return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=kwargs.get('random_state', 42))
+
+
 def train_model(
     model_type: str = "logistic",
     dataset_name: str = "transfermarkt",
     feature_type: str = "match_features",
     target_col: str = "result",
     test_size: float = 0.2,
+    cv_type: str = "time",
     cv_folds: int = 5,
     hyperparameter_tuning: bool = False,
     random_state: int = 42,
-    model_params: Optional[Dict[str, Any]] = None
+    model_params: Optional[Dict[str, Any]] = None,
+    temporal_params: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Train a model with optional hyperparameter tuning.
@@ -177,10 +310,12 @@ def train_model(
         feature_type: Type of features to use
         target_col: Name of the target column
         test_size: Portion of data to use for testing
+        cv_type: Type of cross-validation ('random', 'time', 'season', or 'matchday')
         cv_folds: Number of cross-validation folds
         hyperparameter_tuning: Whether to perform hyperparameter tuning
         random_state: Random seed for reproducibility
         model_params: Optional model parameters to override defaults
+        temporal_params: Optional parameters for temporal validation
         
     Returns:
         Dict[str, Any]: Training results
@@ -198,147 +333,189 @@ def train_model(
     # For standard ML models, proceed with the original implementation
     # Load data
     try:
-        df = load_feature_data(dataset_name, feature_type)
+        if feature_type == "advanced_soccer_features":
+            df = load_advanced_soccer_features(dataset_name)
+        else:
+            df = load_feature_data(dataset_name, feature_type)
     except FileNotFoundError as e:
         logger.error(f"Error loading feature data: {e}")
         raise
     
-    # Create model
-    model = BaselineMatchPredictor(model_type=model_type, dataset_name=dataset_name, feature_type=feature_type)
+    # Set model parameters
+    if model_params is None:
+        model_params = DEFAULT_MODEL_PARAMS.get(model_type, {}).copy()
     
-    # Load pipeline
-    if not model.load_pipeline():
-        raise ValueError("Failed to load feature pipeline")
+    # Create model
+    model = BaselineMatchPredictor(
+        model_type=model_type,
+        dataset_name=dataset_name,
+        feature_type=feature_type,
+        model_params=model_params
+    )
     
     # Process data
     X, y = model.process_data(df, target_col=target_col)
     if X is None or y is None:
         raise ValueError("Failed to process data")
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=y
-    )
+    # Set parameters for temporal validation
+    if temporal_params is None:
+        temporal_params = {}
     
-    # Hyperparameter tuning if requested
-    if hyperparameter_tuning:
-        logger.info(f"Performing hyperparameter tuning with {cv_folds}-fold cross-validation")
+    cv_params = {
+        'cv_type': cv_type,
+        'n_splits': cv_folds,
+        'test_size': test_size,
+        'gap': temporal_params.get('gap', 0),
+        'date_column': temporal_params.get('date_column', 'date'),
+        'season_column': temporal_params.get('season_column', 'season'),
+        'random_state': random_state
+    }
+    
+    # Add specific parameters for different CV types
+    if cv_type == "season":
+        cv_params.update({
+            'test_seasons': temporal_params.get('test_seasons', 1),
+            'max_train_seasons': temporal_params.get('max_train_seasons', None),
+            'rolling': temporal_params.get('rolling', True)
+        })
+    elif cv_type == "matchday":
+        cv_params.update({
+            'n_future_match_days': temporal_params.get('n_future_match_days', 1),
+            'n_test_periods': temporal_params.get('n_test_periods', 10),
+            'min_train_match_days': temporal_params.get('min_train_match_days', 3)
+        })
+    
+    # Add date/season information for temporal validation
+    cv_groups = None
+    if cv_type in ["time", "season", "matchday"] and isinstance(df, pd.DataFrame):
+        date_col = cv_params['date_column']
+        season_col = cv_params['season_column']
         
+        # Use date column for time-based CV if available
+        if cv_type == "time" and date_col in df.columns:
+            cv_groups = df[date_col]
+        
+        # Use season column for season-based CV if available
+        elif cv_type == "season" and season_col in df.columns:
+            cv_groups = df[season_col]
+    
+    # Get the appropriate CV splitter
+    cv_splitter = get_cv_splitter(**cv_params)
+    
+    # Hyperparameter tuning with cross-validation
+    if hyperparameter_tuning:
         # Define parameter grid based on model type
         if model_type == "logistic":
             param_grid = {
-                "C": [0.01, 0.1, 1.0, 10.0],
-                "class_weight": ["balanced", None],
-                "solver": ["lbfgs", "newton-cg", "sag"]
+                'C': [0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
+                'class_weight': ['balanced', None],
+                'max_iter': [1000]
             }
         elif model_type == "random_forest":
             param_grid = {
-                "n_estimators": [50, 100, 200],
-                "max_depth": [5, 10, 15, None],
-                "min_samples_split": [2, 5, 10],
-                "min_samples_leaf": [1, 2, 4]
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, 20, None],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4],
+                'class_weight': ['balanced', 'balanced_subsample', None]
             }
         elif model_type == "xgboost":
             param_grid = {
-                "n_estimators": [50, 100, 200],
-                "max_depth": [3, 5, 7],
-                "learning_rate": [0.01, 0.1, 0.2],
-                "subsample": [0.8, 1.0],
-                "colsample_bytree": [0.8, 1.0]
+                'n_estimators': [50, 100, 200],
+                'max_depth': [3, 5, 7],
+                'learning_rate': [0.01, 0.05, 0.1, 0.2],
+                'subsample': [0.8, 0.9, 1.0],
+                'colsample_bytree': [0.8, 0.9, 1.0]
             }
         else:
-            raise ValueError(f"Unsupported model type for tuning: {model_type}")
+            # Default minimal grid for other models
+            param_grid = {}
         
-        # Create the base model
-        model._create_model()
-        
-        # Create cross-validator
-        cv = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
-        
-        # Create grid search
-        grid_search = GridSearchCV(
-            model.model,
-            param_grid,
-            cv=cv,
-            scoring="f1_weighted",
-            n_jobs=-1,
-            verbose=1
+        if param_grid:
+            # Create GridSearchCV
+            grid_search = GridSearchCV(
+                model.model,
+                param_grid,
+                cv=cv_splitter,
+                scoring='f1_weighted',
+                n_jobs=-1,
+                verbose=1
+            )
+            
+            # Perform grid search
+            if cv_groups is not None and cv_type in ["time", "season", "matchday"]:
+                grid_search.fit(X, y, groups=cv_groups)
+            else:
+                grid_search.fit(X, y)
+            
+            # Update model with best parameters
+            model.model = grid_search.best_estimator_
+            model.model_params = grid_search.best_params_
+            
+            logger.info(f"Best parameters: {grid_search.best_params_}")
+            logger.info(f"Best CV score: {grid_search.best_score_:.4f}")
+    
+    # Split data for final evaluation
+    if cv_type == "random":
+        # Standard random train-test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=random_state, stratify=y
         )
-        
-        # Fit grid search
-        grid_search.fit(X_train, y_train)
-        
-        # Get best parameters
-        best_params = grid_search.best_params_
-        logger.info(f"Best parameters: {best_params}")
-        
-        # Use best estimator
-        model.model = grid_search.best_estimator_
-        
-        # Record hyperparameter tuning results
-        tuning_results = {
-            "best_params": best_params,
-            "best_score": grid_search.best_score_,
-            "cv_results": {
-                "mean_test_score": grid_search.cv_results_["mean_test_score"].tolist(),
-                "std_test_score": grid_search.cv_results_["std_test_score"].tolist(),
-                "params": [str(p) for p in grid_search.cv_results_["params"]]
-            }
-        }
-        
-        # Save tuning results
-        tuning_path = os.path.join(
-            TRAINING_DIR, 
-            f"{dataset_name}_{feature_type}_{model_type}_tuning_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        )
-        
-        with open(tuning_path, 'w') as f:
-            json.dump(tuning_results, f, indent=4)
-        
-        logger.info(f"Hyperparameter tuning results saved to {tuning_path}")
     else:
-        # Use default parameters
-        model._create_model()
+        # Use temporal validation for final split
+        splits = list(cv_splitter.split(X, y, groups=cv_groups))
         
-        # Apply custom parameters if provided
-        if model_params:
-            for param, value in model_params.items():
-                if hasattr(model.model, param):
-                    setattr(model.model, param, value)
+        if not splits:
+            logger.warning("No valid splits found with the specified temporal validation. Falling back to random split.")
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=random_state, stratify=y
+            )
+        else:
+            # Use the most recent split for evaluation
+            train_indices, test_indices = splits[-1]
+            X_train, y_train = X[train_indices], y[train_indices]
+            X_test, y_test = X[test_indices], y[test_indices]
     
     # Train the model
-    model.train(X_train, y_train)
+    logger.info(f"Training {model_type} model on {len(X_train)} samples")
+    model.fit(X_train, y_train)
     
     # Evaluate on test set
-    evaluation = model.evaluate(X_test, y_test)
+    y_pred = model.predict(X_test)
+    accuracy = np.mean(y_pred == y_test)
+    
+    logger.info(f"Model trained in {datetime.now() - start_time}")
+    logger.info(f"Test accuracy: {accuracy:.4f}")
     
     # Save the model
-    model_path = model.save()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_filename = f"{model_type}_{dataset_name}_{feature_type}_{timestamp}.pkl"
+    model_path = os.path.join(MODELS_DIR, model_filename)
+    model.save(model_path)
     
-    # Calculate training duration
-    end_time = datetime.now()
-    training_duration = (end_time - start_time).total_seconds()
-    
-    # Prepare results
-    results = {
+    # Save training details
+    training_details = {
         "model_type": model_type,
         "dataset_name": dataset_name,
         "feature_type": feature_type,
-        "target_col": target_col,
-        "test_size": test_size,
-        "hyperparameter_tuning": hyperparameter_tuning,
-        "training_duration": training_duration,
+        "model_params": model.model_params,
+        "train_size": len(X_train),
+        "test_size": len(X_test),
+        "accuracy": float(accuracy),
+        "training_time": str(datetime.now() - start_time),
+        "timestamp": timestamp,
         "model_path": model_path,
-        "evaluation": evaluation
+        "cv_type": cv_type,
+        "temporal_params": temporal_params
     }
     
-    if hyperparameter_tuning:
-        results["hyperparameter_tuning_results"] = tuning_results
+    # Save training details
+    training_details_path = os.path.join(TRAINING_DIR, f"{model_type}_{dataset_name}_{feature_type}_{timestamp}.json")
+    with open(training_details_path, 'w') as f:
+        json.dump(training_details, f, indent=4)
     
-    logger.info(f"Model training completed in {training_duration:.2f} seconds")
-    logger.info(f"Test accuracy: {evaluation['accuracy']:.4f}")
-    
-    return results
+    return training_details
 
 
 def train_dixon_coles(dataset_name: str, match_weight_days: int = 90) -> Dict[str, Any]:
@@ -498,11 +675,25 @@ def ensemble_models(
     
     # Load all models
     models = []
+    model_types = []
+    
     for path in model_paths:
         try:
-            model = BaselineMatchPredictor.load(path)
-            models.append(model)
-            logger.info(f"Loaded model from {path}")
+            # Check if it's a sequence model
+            if "transformer" in path:
+                try:
+                    model = SoccerTransformerModel.load(path.replace(".h5", ""))
+                    models.append(model)
+                    model_types.append("transformer")
+                    logger.info(f"Loaded transformer model from {path}")
+                except Exception as e:
+                    logger.error(f"Error loading transformer model from {path}: {e}")
+            else:
+                # Standard ML models
+                model = BaselineMatchPredictor.load(path)
+                models.append(model)
+                model_types.append(model.model_type)
+                logger.info(f"Loaded {model.model_type} model from {path}")
         except Exception as e:
             logger.error(f"Error loading model from {path}: {e}")
     
@@ -522,11 +713,31 @@ def ensemble_models(
     # Create ensemble info
     ensemble_info = {
         "ensemble_type": ensemble_type,
-        "models": [model.model_info for model in models],
+        "model_types": model_types,
         "weights": weights,
         "model_paths": model_paths,
         "created_at": datetime.now().isoformat()
     }
+    
+    # Create model info for each model
+    model_infos = []
+    for i, model in enumerate(models):
+        if model_types[i] == "transformer":
+            # Get transformer model info
+            model_info = {
+                "model_type": "transformer",
+                "sequence_length": model.sequence_length,
+                "team_feature_dim": model.team_feature_dim,
+                "match_feature_dim": model.match_feature_dim,
+                "num_classes": model.num_classes
+            }
+        else:
+            # Standard model info
+            model_info = model.model_info
+        
+        model_infos.append(model_info)
+    
+    ensemble_info["models"] = model_infos
     
     # Save ensemble info
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -537,7 +748,7 @@ def ensemble_models(
     with open(ensemble_path, "w") as f:
         json.dump(ensemble_info, f, indent=2, default=str)
     
-    logger.info(f"Created {ensemble_type} ensemble with {len(models)} models")
+    logger.info(f"Created {ensemble_type} ensemble with {len(models)} models of types: {', '.join(model_types)}")
     logger.info(f"Saved ensemble info to {ensemble_path}")
     
     return ensemble_info
@@ -547,7 +758,8 @@ def predict_with_ensemble(
     ensemble_path: str,
     home_team_id: int,
     away_team_id: int,
-    features: Optional[Dict[str, Any]] = None
+    features: Optional[Dict[str, Any]] = None,
+    sequence_data: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Make a prediction using an ensemble of models.
@@ -557,6 +769,8 @@ def predict_with_ensemble(
         home_team_id: ID of the home team
         away_team_id: ID of the away team
         features: Optional dictionary of additional features
+        sequence_data: Optional dictionary with sequence data for transformer models
+            (home_sequence, away_sequence, match_features)
         
     Returns:
         Dict[str, Any]: Prediction results
@@ -567,13 +781,18 @@ def predict_with_ensemble(
     
     ensemble_type = ensemble_info["ensemble_type"]
     model_paths = ensemble_info["model_paths"]
+    model_types = ensemble_info.get("model_types", ["unknown"] * len(model_paths))
     weights = ensemble_info["weights"]
     
     # Load all models
     models = []
-    for path in model_paths:
+    for i, path in enumerate(model_paths):
+        model_type = model_types[i] if i < len(model_types) else "unknown"
         try:
-            model = BaselineMatchPredictor.load(path)
+            if model_type == "transformer":
+                model = SoccerTransformerModel.load(path.replace(".h5", ""))
+            else:
+                model = BaselineMatchPredictor.load(path)
             models.append(model)
         except Exception as e:
             logger.error(f"Error loading model from {path}: {e}")
@@ -583,9 +802,68 @@ def predict_with_ensemble(
     
     # Get predictions from all models
     predictions = []
-    for model in models:
+    for i, model in enumerate(models):
         try:
-            pred = model.predict_match(home_team_id, away_team_id, features)
+            if model_types[i] == "transformer":
+                if sequence_data is None:
+                    logger.warning("Sequence data not provided for transformer model prediction")
+                    continue
+                    
+                # Make transformer model prediction
+                probs = model.predict(
+                    sequence_data["home_sequence"], 
+                    sequence_data["away_sequence"], 
+                    sequence_data["match_features"]
+                )
+                
+                # Format as consistent prediction
+                if model.num_classes == 3:
+                    # Home win (0), draw (1), away win (2)
+                    home_win_prob = float(probs[0][0])
+                    draw_prob = float(probs[0][1])
+                    away_win_prob = float(probs[0][2])
+                    
+                    # Determine prediction
+                    if home_win_prob >= draw_prob and home_win_prob >= away_win_prob:
+                        prediction = "home_win"
+                        confidence = home_win_prob
+                    elif away_win_prob >= home_win_prob and away_win_prob >= draw_prob:
+                        prediction = "away_win"
+                        confidence = away_win_prob
+                    else:
+                        prediction = "draw"
+                        confidence = draw_prob
+                    
+                elif model.num_classes == 2:
+                    # Binary - home win (1) or not (0)
+                    home_win_prob = float(probs[0][0])
+                    draw_prob = 0.0  # Not directly predicted
+                    away_win_prob = 1.0 - home_win_prob
+                    
+                    # Determine prediction
+                    if home_win_prob >= 0.5:
+                        prediction = "home_win"
+                        confidence = home_win_prob
+                    else:
+                        prediction = "away_win"  # Assuming not home_win means away_win
+                        confidence = away_win_prob
+                else:
+                    # Regression or other format - not directly compatible
+                    logger.warning(f"Unsupported transformer model output format with {model.num_classes} classes")
+                    continue
+                
+                pred = {
+                    "model_type": "transformer",
+                    "home_win_probability": home_win_prob,
+                    "draw_probability": draw_prob,
+                    "away_win_probability": away_win_prob,
+                    "prediction": prediction,
+                    "confidence": confidence
+                }
+            else:
+                # Standard model prediction
+                pred = model.predict_match(home_team_id, away_team_id, features)
+                
             predictions.append(pred)
         except Exception as e:
             logger.error(f"Error predicting with model: {e}")
@@ -752,7 +1030,10 @@ def train_multiple_models(
     for model_type in model_types:
         try:
             logger.info(f"Training {model_type} model")
-            result = train_model(model_type=model_type, dataset_name=dataset_name, feature_type=feature_type, **kwargs)
+            if model_type == "transformer":
+                result = train_sequence_model(dataset_name=dataset_name, feature_type=feature_type, **kwargs)
+            else:
+                result = train_model(model_type=model_type, dataset_name=dataset_name, feature_type=feature_type, **kwargs)
             results[model_type] = result
             model_paths.append(result["model_path"])
         except Exception as e:
@@ -767,6 +1048,332 @@ def train_multiple_models(
             logger.error(f"Error creating ensemble: {e}")
     
     return results
+
+
+def train_sequence_model(
+    dataset_name: str = "transfermarkt",
+    feature_type: str = "match_features",
+    sequence_length: int = 5,
+    team_features: Optional[List[str]] = None,
+    match_features: Optional[List[str]] = None,
+    target_col: str = "result",
+    test_size: float = 0.2,
+    cv_type: str = "time",
+    cv_folds: int = 5,
+    batch_size: int = 32,
+    epochs: int = 100,
+    patience: int = 10,
+    random_state: int = 42,
+    model_params: Optional[Dict[str, Any]] = None,
+    temporal_params: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Train a sequence-based transformer model for soccer prediction.
+    
+    Args:
+        dataset_name: Name of the dataset to use
+        feature_type: Type of features to use
+        sequence_length: Number of past matches to include for each team
+        team_features: List of team-specific features to use (if None, use defaults)
+        match_features: List of match-specific features to use (if None, use defaults)
+        target_col: Name of the target column
+        test_size: Portion of data to use for testing
+        cv_type: Type of cross-validation ('random', 'time', 'season', or 'matchday')
+        cv_folds: Number of cross-validation folds
+        batch_size: Batch size for training
+        epochs: Maximum number of epochs
+        patience: Patience for early stopping
+        random_state: Random seed for reproducibility
+        model_params: Optional model parameters
+        temporal_params: Optional parameters for temporal validation
+        
+    Returns:
+        Dict[str, Any]: Training results
+    """
+    # Record start time
+    start_time = datetime.now()
+    
+    # Ensure SoccerTransformerModel is available
+    if 'SoccerTransformerModel' not in globals():
+        logger.error("SoccerTransformerModel not available. Make sure src/models/sequence_models.py exists.")
+        raise ImportError("SoccerTransformerModel not available")
+    
+    # Load data
+    try:
+        if feature_type == "advanced_soccer_features":
+            df = load_advanced_soccer_features(dataset_name)
+        else:
+            df = load_feature_data(dataset_name, feature_type)
+    except FileNotFoundError as e:
+        logger.error(f"Error loading feature data: {e}")
+        raise
+    
+    # Ensure required columns exist
+    if 'date' not in df.columns:
+        logger.error("Date column not found in dataset")
+        raise ValueError("Date column not found in dataset")
+    
+    if 'home_club_id' not in df.columns or 'away_club_id' not in df.columns:
+        logger.error("Team ID columns not found in dataset")
+        raise ValueError("Team ID columns not found in dataset")
+    
+    # Convert date column to datetime
+    df['date'] = pd.to_datetime(df['date'])
+    
+    # Determine target column values
+    if target_col not in df.columns:
+        if target_col == "result" and "home_club_goals" in df.columns and "away_club_goals" in df.columns:
+            # Create result column (0: home win, 1: draw, 2: away win)
+            df['result'] = np.select(
+                [df['home_club_goals'] > df['away_club_goals'], 
+                 df['home_club_goals'] == df['away_club_goals']],
+                [0, 1], 2
+            )
+        else:
+            logger.error(f"Target column {target_col} not found")
+            raise ValueError(f"Target column {target_col} not found")
+    
+    # Set default features if not provided
+    if team_features is None:
+        # Use basic team features
+        team_features = [
+            'home_club_goals', 'away_club_goals',
+            'home_club_possession', 'away_club_possession',
+            'home_club_shots_on_target', 'away_club_shots_on_target',
+            'home_club_shots_total', 'away_club_shots_total'
+        ]
+        
+        # Add advanced features if available
+        advanced_features = [
+            'home_xg', 'away_xg',
+            'home_elo_pre', 'away_elo_pre',
+            'home_form', 'away_form'
+        ]
+        
+        for feature in advanced_features:
+            if feature in df.columns:
+                team_features.append(feature)
+    
+    if match_features is None:
+        # Use basic match features
+        match_features = ['league_id', 'venue', 'season']
+        
+        # Add advanced features if available
+        advanced_features = [
+            'match_importance', 'rest_advantage',
+            'home_rest_days', 'away_rest_days',
+            'elo_diff', 'form_diff'
+        ]
+        
+        for feature in advanced_features:
+            if feature in df.columns:
+                match_features.append(feature)
+    
+    # Convert categorical features to numeric
+    for feature in match_features:
+        if df[feature].dtype == 'object':
+            df[feature] = pd.factorize(df[feature])[0]
+    
+    # Set up temporal validation
+    if temporal_params is None:
+        temporal_params = {}
+    
+    cv_params = {
+        'cv_type': cv_type,
+        'n_splits': cv_folds,
+        'test_size': test_size,
+        'gap': temporal_params.get('gap', 0),
+        'date_column': temporal_params.get('date_column', 'date'),
+        'season_column': temporal_params.get('season_column', 'season'),
+        'random_state': random_state
+    }
+    
+    # Add specific parameters for different CV types
+    if cv_type == "season":
+        cv_params.update({
+            'test_seasons': temporal_params.get('test_seasons', 1),
+            'max_train_seasons': temporal_params.get('max_train_seasons', None),
+            'rolling': temporal_params.get('rolling', True)
+        })
+    elif cv_type == "matchday":
+        cv_params.update({
+            'n_future_match_days': temporal_params.get('n_future_match_days', 1),
+            'n_test_periods': temporal_params.get('n_test_periods', 10),
+            'min_train_match_days': temporal_params.get('min_train_match_days', 3)
+        })
+    
+    # Add date/season information for temporal validation
+    cv_groups = None
+    if cv_type in ["time", "season", "matchday"]:
+        date_col = cv_params['date_column']
+        season_col = cv_params['season_column']
+        
+        # Use date column for time-based CV if available
+        if cv_type == "time" and date_col in df.columns:
+            cv_groups = df[date_col]
+        
+        # Use season column for season-based CV if available
+        elif cv_type == "season" and season_col in df.columns:
+            cv_groups = df[season_col]
+    
+    # Get the appropriate CV splitter
+    cv_splitter = get_cv_splitter(**cv_params)
+    
+    # Initialize sequence processor
+    processor = SequenceDataProcessor(sequence_length=sequence_length)
+    
+    # Generate CV splits
+    X = np.arange(len(df))  # Just for splitting
+    y = df[target_col].values
+    
+    # Get parameters for transformer model
+    team_feature_dim = len([f for f in team_features if not f.startswith('home_') and not f.startswith('away_')])
+    match_feature_dim = len(match_features)
+    
+    # Set default model parameters if not provided
+    if model_params is None:
+        model_params = {
+            'embed_dim': 64,
+            'num_heads': 2,
+            'ff_dim': 64,
+            'num_transformer_blocks': 2,
+            'dropout_rate': 0.2,
+            'l2_reg': 1e-4,
+            'learning_rate': 0.001
+        }
+    
+    # Determine number of output classes
+    if target_col == 'result':
+        num_classes = len(np.unique(y))
+    elif target_col == 'home_win':
+        num_classes = 2
+    else:
+        # Regression task or custom target
+        num_classes = 1
+    
+    # Create the model
+    model = SoccerTransformerModel(
+        sequence_length=sequence_length,
+        team_feature_dim=team_feature_dim,
+        match_feature_dim=match_feature_dim,
+        num_classes=num_classes,
+        **model_params
+    )
+    
+    # Prepare for time-based CV
+    if cv_type == "random":
+        # Use simple train-test split
+        train_indices, test_indices = train_test_split(
+            np.arange(len(df)), test_size=test_size, random_state=random_state, stratify=y
+        )
+        train_data, test_data, all_y = processor.prepare_dataset(
+            df, team_features, match_features, train_indices, test_indices
+        )
+        train_y = all_y[:len(train_indices)]
+        test_y = all_y[len(train_indices):]
+    else:
+        # Use temporal validation for final split
+        splits = list(cv_splitter.split(X, y, groups=cv_groups))
+        
+        if not splits:
+            logger.warning("No valid splits found with the specified temporal validation. Falling back to random split.")
+            train_indices, test_indices = train_test_split(
+                np.arange(len(df)), test_size=test_size, random_state=random_state, stratify=y
+            )
+            train_data, test_data, all_y = processor.prepare_dataset(
+                df, team_features, match_features, train_indices, test_indices
+            )
+            train_y = all_y[:len(train_indices)]
+            test_y = all_y[len(train_indices):]
+        else:
+            # Use the most recent split for evaluation
+            train_indices, test_indices = splits[-1]
+            train_data, test_data, all_y = processor.prepare_dataset(
+                df, team_features, match_features, train_indices, test_indices
+            )
+            train_y = all_y[:len(train_indices)]
+            test_y = all_y[len(test_indices):]
+    
+    # Prepare final target variable format
+    if num_classes > 2:
+        # Convert to one-hot encoding for multi-class
+        from tensorflow.keras.utils import to_categorical
+        train_y_final = to_categorical(train_y, num_classes=num_classes)
+        test_y_final = to_categorical(test_y, num_classes=num_classes)
+    else:
+        train_y_final = train_y
+        test_y_final = test_y
+    
+    # Prepare validation data for early stopping
+    validation_data = (
+        [test_data['X_home_seq'], test_data['X_away_seq'], test_data['X_match']],
+        test_y_final
+    )
+    
+    # Train the model
+    logger.info(f"Training transformer model on {len(train_indices)} samples")
+    training_results = model.fit(
+        train_data['X_home_seq'],
+        train_data['X_away_seq'],
+        train_data['X_match'],
+        train_y_final,
+        validation_data=validation_data,
+        batch_size=batch_size,
+        epochs=epochs,
+        patience=patience,
+        verbose=1
+    )
+    
+    # Evaluate on test set
+    test_metrics = model.evaluate(
+        test_data['X_home_seq'],
+        test_data['X_away_seq'],
+        test_data['X_match'],
+        test_y_final
+    )
+    
+    logger.info(f"Model trained in {datetime.now() - start_time}")
+    logger.info(f"Test accuracy: {test_metrics.get('accuracy', 0):.4f}")
+    
+    # Save the model
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_filename = f"transformer_{dataset_name}_{feature_type}_{timestamp}"
+    model_path = os.path.join(SEQUENCE_MODELS_DIR, model_filename)
+    os.makedirs(SEQUENCE_MODELS_DIR, exist_ok=True)
+    saved_path = model.save(model_path)
+    
+    # Save training details
+    training_details = {
+        "model_type": "transformer",
+        "dataset_name": dataset_name,
+        "feature_type": feature_type,
+        "sequence_length": sequence_length,
+        "team_features": team_features,
+        "match_features": match_features,
+        "model_params": model_params,
+        "train_size": len(train_indices),
+        "test_size": len(test_indices),
+        "accuracy": float(test_metrics.get('accuracy', 0)),
+        "training_time": str(datetime.now() - start_time),
+        "timestamp": timestamp,
+        "model_path": saved_path,
+        "cv_type": cv_type,
+        "temporal_params": temporal_params,
+        "training_history": {
+            "train_loss": training_results.get("train_loss"),
+            "train_acc": training_results.get("train_acc"),
+            "val_loss": training_results.get("val_loss"),
+            "val_acc": training_results.get("val_acc"),
+            "epochs": training_results.get("epochs")
+        }
+    }
+    
+    # Save training details
+    training_details_path = os.path.join(TRAINING_DIR, f"transformer_{dataset_name}_{feature_type}_{timestamp}.json")
+    with open(training_details_path, 'w') as f:
+        json.dump(training_details, f, indent=4, default=str)
+    
+    return training_details
 
 
 if __name__ == "__main__":

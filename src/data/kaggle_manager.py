@@ -9,6 +9,8 @@ import os
 import sys
 from pathlib import Path
 import logging
+import json
+import uuid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -98,20 +100,35 @@ def safe_import_kaggle():
         tuple: (success, module or error message)
     """
     try:
-        # Temporarily modify environment to prevent authentication
-        old_config_dir = os.environ.get("KAGGLE_CONFIG_DIR")
-        os.environ["KAGGLE_CONFIG_DIR"] = "DISABLED_TEMP_DONT_AUTHENTICATE"
+        # First check if credentials exist
+        has_credentials = False
         
-        # Try importing
+        # Check for credentials file
+        if os.path.exists("/root/.kaggle/kaggle.json"):
+            # Docker environment path
+            os.environ["KAGGLE_CONFIG_DIR"] = "/root/.kaggle"
+            has_credentials = True
+            logger.info("Using Kaggle credentials from /root/.kaggle/kaggle.json")
+        elif os.path.exists(os.path.expanduser("~/.kaggle/kaggle.json")):
+            # Standard path
+            os.environ["KAGGLE_CONFIG_DIR"] = os.path.expanduser("~/.kaggle")
+            has_credentials = True
+            logger.info(f"Using Kaggle credentials from {os.path.expanduser('~/.kaggle/kaggle.json')}")
+            
+        # Check for environment variables as fallback
+        if os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"):
+            has_credentials = True
+            logger.info("Using Kaggle credentials from environment variables")
+            
+        # Now import Kaggle
         import kaggle
         
-        # Restore original environment
-        if old_config_dir:
-            os.environ["KAGGLE_CONFIG_DIR"] = old_config_dir
+        # Return success only if we have credentials
+        if has_credentials:
+            return True, kaggle
         else:
-            os.environ.pop("KAGGLE_CONFIG_DIR", None)
+            return False, "No Kaggle credentials found. Please set up your kaggle.json file or environment variables."
             
-        return True, kaggle
     except ImportError:
         return False, "Kaggle package is not installed. Run: pip install kaggle"
     except Exception as e:
@@ -204,43 +221,84 @@ def import_dataset(dataset_ref, target_dir=None):
     Returns:
         dict: Result with status and path information
     """
-    success, result = safe_import_kaggle()
-    
-    if not success:
-        return {
-            "status": "error",
-            "message": str(result)
-        }
-    
-    kaggle = result
-    
     try:
-        # Try authentication
-        kaggle.api.authenticate()
+        # Direct Kaggle import with explicit credential setup
+        import kaggle
         
-        # Determine target directory
-        if not target_dir:
-            # Default to project data directory
-            project_root = Path(__file__).resolve().parent.parent.parent
-            target_dir = project_root / "data" / "kaggle_imports"
-            
-            # Also create a temp directory for download in case of permission issues
-            temp_dir = project_root / "data" / "temp"
-            os.makedirs(temp_dir, exist_ok=True)
-        else:
-            temp_dir = Path(target_dir) / "temp"
-            os.makedirs(temp_dir, exist_ok=True)
+        # Ensure credentials are properly set
+        credentials_found = False
+        credentials_errors = []
         
-        # Make sure target directory exists
+        # Check Docker path first
+        if os.path.exists("/root/.kaggle/kaggle.json"):
+            try:
+                # Load credentials from file
+                with open("/root/.kaggle/kaggle.json", "r") as f:
+                    creds = json.load(f)
+                    os.environ["KAGGLE_USERNAME"] = creds.get("username", "")
+                    os.environ["KAGGLE_KEY"] = creds.get("key", "")
+                os.environ["KAGGLE_CONFIG_DIR"] = "/root/.kaggle"
+                credentials_found = True
+                logger.info("Using Kaggle credentials from /root/.kaggle/kaggle.json")
+            except Exception as e:
+                credentials_errors.append(f"Error loading Docker credentials: {str(e)}")
+        
+        # Try standard path if Docker path failed
+        if not credentials_found and os.path.exists(os.path.expanduser("~/.kaggle/kaggle.json")):
+            try:
+                # Load credentials from file
+                with open(os.path.expanduser("~/.kaggle/kaggle.json"), "r") as f:
+                    creds = json.load(f)
+                    os.environ["KAGGLE_USERNAME"] = creds.get("username", "")
+                    os.environ["KAGGLE_KEY"] = creds.get("key", "")
+                os.environ["KAGGLE_CONFIG_DIR"] = os.path.expanduser("~/.kaggle")
+                credentials_found = True
+                logger.info(f"Using Kaggle credentials from {os.path.expanduser('~/.kaggle/kaggle.json')}")
+            except Exception as e:
+                credentials_errors.append(f"Error loading standard credentials: {str(e)}")
+        
+        # Check if environment variables are set
+        if not credentials_found:
+            if os.environ.get("KAGGLE_USERNAME") and os.environ.get("KAGGLE_KEY"):
+                credentials_found = True
+                logger.info("Using Kaggle credentials from environment variables")
+            else:
+                error_message = "No Kaggle credentials found. Please set up your kaggle.json file or environment variables."
+                if credentials_errors:
+                    error_message += f" Errors: {'; '.join(credentials_errors)}"
+                logger.error(error_message)
+                return {
+                    "status": "error",
+                    "message": error_message
+                }
+        
+        # Create a unique directory for this dataset to prevent overlap
+        # Extract dataset name from reference (username/dataset-name)
+        dataset_name = dataset_ref.split('/')[-1] if '/' in dataset_ref else dataset_ref
+        unique_id = str(uuid.uuid4())[:8]  # Use a UUID to ensure uniqueness
+        
+        # Determine project root and import DATA_DIR
+        project_root = Path(__file__).resolve().parent.parent.parent
+        
+        # Import DATA_DIR from config
         try:
-            os.makedirs(target_dir, exist_ok=True)
-            print(f"Target directory created: {target_dir}")
-        except Exception as dir_error:
-            print(f"Warning - could not create target directory: {str(dir_error)}")
-            print(f"Will attempt to use temporary directory: {temp_dir}")
-            target_dir = temp_dir
+            sys.path.insert(0, str(project_root))
+            from config.default_config import DATA_DIR
+        except ImportError:
+            # Fallback definition if import fails
+            DATA_DIR = project_root / "data"
         
-        # Test write permissions
+        if not target_dir:
+            # Create a dataset-specific directory inside kaggle_imports
+            target_dir = DATA_DIR / "kaggle_imports" / f"{dataset_name}_{unique_id}"
+            os.makedirs(target_dir, exist_ok=True)
+            logger.info(f"Created unique download directory: {target_dir}")
+        
+        # Always create temp directory as fallback
+        temp_dir = DATA_DIR / "temp" / f"{dataset_name}_{unique_id}"
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Test write permissions on target directory
         try:
             test_file = Path(target_dir) / ".write_test"
             with open(test_file, 'w') as f:
@@ -270,9 +328,11 @@ def import_dataset(dataset_ref, target_dir=None):
         os.chdir(target_dir)
         
         try:
-            # Download the dataset
+            # Download the dataset - force fresh download
             print(f"Downloading dataset {dataset_ref} to {target_dir}")
-            kaggle.api.dataset_download_files(dataset_ref, unzip=True)
+            
+            # Force fresh download by setting force=True
+            kaggle.api.dataset_download_files(dataset_ref, unzip=True, force=True)
             
             # List the downloaded files
             files = [f for f in os.listdir('.') if os.path.isfile(f)]
@@ -280,32 +340,6 @@ def import_dataset(dataset_ref, target_dir=None):
             
             # Change back to original directory
             os.chdir(original_dir)
-            
-            # If we used temp_dir, try to move files to the proper location
-            if target_dir == temp_dir and len(files) > 0:
-                proper_target = project_root / "data" / "kaggle_imports"
-                try:
-                    os.makedirs(proper_target, exist_ok=True)
-                    
-                    # Try to move files
-                    moved_files = []
-                    for file in files:
-                        src = temp_dir / file
-                        dst = proper_target / file
-                        try:
-                            import shutil
-                            shutil.copy2(src, dst)
-                            moved_files.append(file)
-                            print(f"Copied {src} to {dst}")
-                        except Exception as move_error:
-                            print(f"Could not move file {file}: {str(move_error)}")
-                    
-                    # If we moved any files, update the target_dir
-                    if moved_files:
-                        target_dir = proper_target
-                        files = moved_files
-                except Exception as move_dir_error:
-                    print(f"Could not move files to proper location: {str(move_dir_error)}")
             
             # Register the dataset
             try:

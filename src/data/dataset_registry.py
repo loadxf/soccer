@@ -12,9 +12,15 @@ import pandas as pd
 from pathlib import Path
 from datetime import datetime
 
-# Define data directory paths
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+# Import DATA_DIR from config
+try:
+    from config.default_config import DATA_DIR
+except ImportError:
+    # Define data directory paths if import fails
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+    DATA_DIR = PROJECT_ROOT / "data"
+
+# Define subdirectories
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 USER_UPLOADS_DIR = DATA_DIR / "uploads"
@@ -22,6 +28,9 @@ KAGGLE_IMPORTS_DIR = DATA_DIR / "kaggle_imports"
 
 # Define registry file path
 REGISTRY_FILE = DATA_DIR / "datasets.json"
+
+# List of system files and directories to ignore
+SYSTEM_FILES = ['.DS_Store', '.git', '.gitignore', '__pycache__', 'Thumbs.db', 'desktop.ini']
 
 # Create directories if they don't exist
 for directory in [RAW_DATA_DIR, PROCESSED_DATA_DIR, USER_UPLOADS_DIR, KAGGLE_IMPORTS_DIR]:
@@ -198,28 +207,176 @@ def get_dataset_preview(dataset_id, rows=5):
     dataset = get_dataset(dataset_id)
     
     if not dataset:
+        print(f"Dataset {dataset_id} not found")
         return None
     
-    file_path = dataset.get("path")
+    print(f"Getting preview for dataset: {dataset.get('name')} (ID: {dataset_id})")
     
-    if not file_path or not os.path.exists(file_path):
+    # Try in this order:
+    # 1. preview_file (added in newer versions)
+    # 2. path (could be a file or directory)
+    # 3. Individual files from files list if path is a directory
+    
+    # Check for preview_file first (newer datasets)
+    preview_file = dataset.get("preview_file")
+    if preview_file and os.path.exists(preview_file) and os.path.isfile(preview_file):
+        print(f"Using preview_file: {preview_file}")
+        file_path = preview_file
+    else:
+        # Fall back to path
+        file_path = dataset.get("path")
+        print(f"Using path: {file_path}")
+    
+    if not file_path:
+        print("No path found in dataset")
         return None
+    
+    # Check if path exists
+    if not os.path.exists(file_path):
+        print(f"Path does not exist: {file_path}")
+        
+        # If it's a directory, try to find a CSV or Excel file in it
+        if dataset.get("files"):
+            print(f"Trying to find a suitable file among {len(dataset.get('files'))} files listed in dataset")
+            
+            # Get parent directory if the path was a file
+            if not os.path.isdir(file_path):
+                parent_dir = os.path.dirname(file_path)
+            else:
+                parent_dir = file_path
+                
+            # Try to find a CSV or Excel file
+            for file in dataset.get("files"):
+                potential_file = os.path.join(parent_dir, file)
+                if os.path.exists(potential_file) and os.path.isfile(potential_file):
+                    ext = os.path.splitext(file)[1].lower()
+                    if ext in ['.csv', '.xlsx', '.xls', '.json']:
+                        print(f"Found data file: {potential_file}")
+                        file_path = potential_file
+                        break
+            else:
+                # If no CSV/Excel found, try the first file
+                if dataset.get("files") and len(dataset.get("files")) > 0:
+                    potential_file = os.path.join(parent_dir, dataset.get("files")[0])
+                    if os.path.exists(potential_file) and os.path.isfile(potential_file):
+                        print(f"Using first available file: {potential_file}")
+                        file_path = potential_file
+        else:
+            print("No files listed in dataset")
+    elif os.path.isdir(file_path):
+        print(f"Path is a directory: {file_path}")
+        
+        # Look in the directory for suitable files
+        files_in_dir = os.listdir(file_path)
+        print(f"Directory contains {len(files_in_dir)} files")
+        
+        # First try CSV files
+        for file in files_in_dir:
+            if file.lower().endswith('.csv'):
+                potential_file = os.path.join(file_path, file)
+                if os.path.isfile(potential_file):
+                    print(f"Found CSV file in directory: {file}")
+                    file_path = potential_file
+                    break
+        else:
+            # Then try Excel files
+            for file in files_in_dir:
+                if file.lower().endswith(('.xlsx', '.xls')):
+                    potential_file = os.path.join(file_path, file)
+                    if os.path.isfile(potential_file):
+                        print(f"Found Excel file in directory: {file}")
+                        file_path = potential_file
+                        break
+            else:
+                # Then try JSON files
+                for file in files_in_dir:
+                    if file.lower().endswith('.json'):
+                        potential_file = os.path.join(file_path, file)
+                        if os.path.isfile(potential_file):
+                            print(f"Found JSON file in directory: {file}")
+                            file_path = potential_file
+                            break
+                else:
+                    # If none of the expected formats found, try any file
+                    if files_in_dir:
+                        potential_file = os.path.join(file_path, files_in_dir[0])
+                        if os.path.isfile(potential_file):
+                            print(f"Using first file in directory: {files_in_dir[0]}")
+                            file_path = potential_file
+    
+    # Check again if file exists after our corrections
+    if not os.path.exists(file_path) or os.path.isdir(file_path):
+        print(f"File not found or is a directory: {file_path}")
+        return pd.DataFrame({"Error": ["File not found or is a directory"]})
+    
+    # At this point, we should have a valid file path
+    print(f"Final file path for preview: {file_path}")
     
     try:
         # Determine file type
         file_ext = os.path.splitext(file_path)[1].lower()
         
         if file_ext == '.csv':
-            return pd.read_csv(file_path, nrows=rows)
+            print(f"Reading CSV file: {file_path}")
+            try:
+                # First try with default settings
+                return pd.read_csv(file_path, nrows=rows)
+            except Exception as e1:
+                print(f"Standard CSV read failed, trying with different encodings and separators: {str(e1)}")
+                # Try with different encodings
+                encodings = ['utf-8', 'latin1', 'iso-8859-1', 'cp1252']
+                separators = [',', ';', '\t', '|']
+                
+                for encoding in encodings:
+                    for sep in separators:
+                        try:
+                            df = pd.read_csv(file_path, nrows=rows, encoding=encoding, sep=sep)
+                            print(f"Successfully read with encoding={encoding}, separator={sep}")
+                            return df
+                        except:
+                            pass
+                
+                # If all attempts fail, raise the original error
+                raise e1
+                
         elif file_ext in ['.xlsx', '.xls']:
+            print(f"Reading Excel file: {file_path}")
             return pd.read_excel(file_path, nrows=rows)
+            
         elif file_ext == '.json':
-            return pd.read_json(file_path).head(rows)
+            print(f"Reading JSON file: {file_path}")
+            # For JSON files, try different approaches
+            try:
+                # Standard method
+                return pd.read_json(file_path).head(rows)
+            except:
+                # Try as JSON Lines format
+                try:
+                    return pd.read_json(file_path, lines=True).head(rows)
+                except:
+                    # Try to read manually and convert
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                    
+                    # Try to convert to DataFrame
+                    if isinstance(data, list):
+                        return pd.DataFrame(data).head(rows)
+                    elif isinstance(data, dict):
+                        return pd.DataFrame([data]).head(rows)
+                    else:
+                        return pd.DataFrame({"Error": ["JSON format not supported"]})
         else:
-            return pd.DataFrame({"Error": ["Unsupported file format"]})
+            print(f"Unsupported file format: {file_ext}")
+            # Try to read as text file for preview
+            try:
+                with open(file_path, 'r') as f:
+                    lines = [line.strip() for line in f.readlines()[:rows]]
+                return pd.DataFrame({"Content": lines})
+            except:
+                return pd.DataFrame({"Error": ["Unsupported file format"]})
     
     except Exception as e:
-        print(f"Error reading file: {e}")
+        print(f"Error reading file: {str(e)}")
         return pd.DataFrame({"Error": [str(e)]})
 
 def save_uploaded_dataset(uploaded_file):
@@ -323,58 +480,287 @@ def register_kaggle_dataset(dataset_ref, path, files):
         "description": f"Imported from Kaggle: {dataset_ref}"
     }
     
+    # Debug output to help diagnose issues
+    print(f"Registering Kaggle dataset '{dataset_name}' with {len(files)} files in {path}")
+    for i, file in enumerate(files[:5]):  # Show only the first 5 files to avoid log spamming
+        print(f"  File {i+1}: {file}")
+    if len(files) > 5:
+        print(f"  ... and {len(files) - 5} more files")
+    
     try:
-        # Try to detect file types
+        # Try to detect file types and analyze files
         file_types = []
-        for file in files:
-            file_path = os.path.join(path, file)
-            if file.endswith('.csv'):
-                file_types.append("csv")
-            elif file.endswith('.json'):
-                file_types.append("json")
-            elif file.endswith('.xlsx') or file.endswith('.xls'):
-                file_types.append("excel")
-            else:
-                file_types.append("unknown")
+        file_sizes = []
+        row_counts = []
+        columns_list = []
+        data_files = []  # Track files that contain actual data (CSV, Excel, etc.)
+        
+        # First pass - recursively find all data files in the directory and subdirectories
+        for root, dirs, all_files in os.walk(path):
+            # Skip system directories
+            dirs[:] = [d for d in dirs if d not in SYSTEM_FILES and not d.startswith('.')]
+            
+            for file in all_files:
+                # Skip system files and hidden files
+                if file in SYSTEM_FILES or file.startswith('.'):
+                    continue
+                    
+                file_path = os.path.join(root, file)
+                file_ext = os.path.splitext(file)[1].lower()
+                
+                try:
+                    # Get file size
+                    size = os.path.getsize(file_path)
+                    file_sizes.append(size)
+                    
+                    # Check file type and collect detailed info for data files
+                    if file_ext == '.csv':
+                        file_types.append("csv")
+                        data_files.append((file, file_path, "csv", size))
+                    elif file_ext in ['.xlsx', '.xls']:
+                        file_types.append("excel") 
+                        data_files.append((file, file_path, "excel", size))
+                    elif file_ext == '.json':
+                        file_types.append("json")
+                        data_files.append((file, file_path, "json", size))
+                    elif file_ext in ['.txt', '.md']:
+                        file_types.append("text")
+                        # Only consider text files as data if they're not documentation
+                        if not any(doc_name in file.lower() for doc_name in ['readme', 'license', 'documentation']):
+                            data_files.append((file, file_path, "text", size))
+                    elif file_ext == '.parquet':
+                        file_types.append("parquet")
+                        data_files.append((file, file_path, "parquet", size))
+                    else:
+                        file_types.append(file_ext[1:] if file_ext else "unknown")
+                except Exception as e:
+                    print(f"Error analyzing file {file}: {str(e)}")
+                    file_sizes.append(0)
+                    file_types.append("unknown")
         
         dataset_info["file_types"] = file_types
-        
-        # Try to get file sizes
-        file_sizes = []
-        for file in files:
-            file_path = os.path.join(path, file)
-            try:
-                size = os.path.getsize(file_path)
-                file_sizes.append(size)
-            except:
-                file_sizes.append(0)
-        
         dataset_info["file_sizes"] = file_sizes
         
-        # Try to get row counts for tabular data
-        row_counts = []
-        for file in files:
-            file_path = os.path.join(path, file)
-            try:
-                if file.endswith('.csv'):
-                    df = pd.read_csv(file_path, nrows=5)
-                    count = len(pd.read_csv(file_path, usecols=[0]))
-                    row_counts.append(count)
-                elif file.endswith('.xlsx') or file.endswith('.xls'):
-                    df = pd.read_excel(file_path, nrows=5)
-                    count = len(pd.read_excel(file_path, usecols=[0]))
-                    row_counts.append(count)
-                else:
-                    row_counts.append(0)
-            except:
-                row_counts.append(0)
+        print(f"Found {len(data_files)} potential data files among {len(files)} total files")
         
+        # If we didn't find any data files, look for any readable files
+        if not data_files:
+            print("No standard data files found, searching for any readable files...")
+            for root, dirs, all_files in os.walk(path):
+                dirs[:] = [d for d in dirs if d not in SYSTEM_FILES and not d.startswith('.')]
+                for file in all_files:
+                    if file in SYSTEM_FILES or file.startswith('.'):
+                        continue
+                    file_path = os.path.join(root, file)
+                    try:
+                        # Try to determine if file is readable text
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            first_line = f.readline()
+                            if len(first_line) > 0:
+                                size = os.path.getsize(file_path)
+                                data_files.append((file, file_path, "text", size))
+                                print(f"  Added text file: {file}")
+                    except:
+                        pass  # Not a readable text file
+        
+        # Sort data files by size (usually larger files have more data)
+        data_files.sort(key=lambda x: x[3], reverse=True)
+        
+        # Second pass - analyze data files for rows and columns
+        primary_file_path = None
+        
+        # Try each data file in priority order (CSV, Excel, JSON, Parquet, Text)
+        for file_format in ["csv", "excel", "json", "parquet", "text"]:
+            format_files = [f for f in data_files if f[2] == file_format]
+            
+            if format_files:
+                print(f"Trying {len(format_files)} {file_format} files...")
+                
+                # Try each file of this format until we find one we can read
+                for file_name, file_path, file_type, file_size in format_files:
+                    try:
+                        if file_type == "csv":
+                            # Try to read with pandas, handling potential errors
+                            df = pd.read_csv(file_path, nrows=5)
+                            count = len(pd.read_csv(file_path, usecols=[0]))
+                            
+                            row_counts.append(count)
+                            columns_list.append(df.columns.tolist())
+                            
+                            # If we found a valid CSV, use it as primary
+                            if primary_file_path is None:
+                                primary_file_path = file_path
+                                dataset_info["preview_file"] = file_path
+                                dataset_info["columns"] = df.columns.tolist()
+                                dataset_info["rows"] = count
+                                print(f"Selected primary file: {file_name} with {count} rows and {len(df.columns)} columns")
+                                
+                        elif file_type == "excel":
+                            # Try to read Excel, handling potential errors
+                            df = pd.read_excel(file_path, nrows=5)
+                            count = len(pd.read_excel(file_path, usecols=[0]))
+                            
+                            row_counts.append(count)
+                            columns_list.append(df.columns.tolist())
+                            
+                            # If we found a valid Excel file and have no primary file yet, use it
+                            if primary_file_path is None:
+                                primary_file_path = file_path
+                                dataset_info["preview_file"] = file_path
+                                dataset_info["columns"] = df.columns.tolist()
+                                dataset_info["rows"] = count
+                                print(f"Selected primary file: {file_name} with {count} rows and {len(df.columns)} columns")
+                                
+                        elif file_type == "json":
+                            # Try different JSON reading approaches
+                            try:
+                                # Standard dataframe approach
+                                df = pd.read_json(file_path)
+                                count = len(df)
+                                
+                                row_counts.append(count)
+                                columns_list.append(df.columns.tolist())
+                                
+                                # If we found a valid JSON file and have no primary file yet, use it
+                                if primary_file_path is None:
+                                    primary_file_path = file_path
+                                    dataset_info["preview_file"] = file_path
+                                    dataset_info["columns"] = df.columns.tolist()
+                                    dataset_info["rows"] = count
+                                    print(f"Selected primary file: {file_name} with {count} rows and {len(df.columns)} columns")
+                            except:
+                                # Try JSON lines format
+                                try:
+                                    df = pd.read_json(file_path, lines=True)
+                                    count = len(df)
+                                    
+                                    row_counts.append(count)
+                                    columns_list.append(df.columns.tolist())
+                                    
+                                    if primary_file_path is None:
+                                        primary_file_path = file_path
+                                        dataset_info["preview_file"] = file_path
+                                        dataset_info["columns"] = df.columns.tolist()
+                                        dataset_info["rows"] = count
+                                        print(f"Selected primary file (JSON Lines): {file_name}")
+                                except:
+                                    # Try manual JSON parsing
+                                    with open(file_path, 'r') as f:
+                                        json_data = json.load(f)
+                                    
+                                    if isinstance(json_data, list) and len(json_data) > 0:
+                                        count = len(json_data)
+                                        cols = list(json_data[0].keys()) if isinstance(json_data[0], dict) else []
+                                        
+                                        row_counts.append(count)
+                                        columns_list.append(cols)
+                                        
+                                        if primary_file_path is None:
+                                            primary_file_path = file_path
+                                            dataset_info["preview_file"] = file_path
+                                            dataset_info["columns"] = cols
+                                            dataset_info["rows"] = count
+                                            print(f"Selected primary file (manual JSON): {file_name}")
+                                    elif isinstance(json_data, dict):
+                                        # Some special handling for complex JSON structures
+                                        cols = list(json_data.keys())
+                                        
+                                        if primary_file_path is None:
+                                            primary_file_path = file_path
+                                            dataset_info["preview_file"] = file_path
+                                            dataset_info["columns"] = cols
+                                            dataset_info["rows"] = 1
+                                            print(f"Selected primary file (JSON object): {file_name}")
+                                
+                        elif file_type == "parquet":
+                            # Try to read Parquet
+                            df = pd.read_parquet(file_path)
+                            count = len(df)
+                            
+                            row_counts.append(count)
+                            columns_list.append(df.columns.tolist())
+                            
+                            if primary_file_path is None:
+                                primary_file_path = file_path
+                                dataset_info["preview_file"] = file_path
+                                dataset_info["columns"] = df.columns.tolist()
+                                dataset_info["rows"] = count
+                                print(f"Selected primary file (Parquet): {file_name}")
+                                
+                        elif file_type == "text":
+                            # For text files, try to detect delimiter
+                            with open(file_path, 'r') as f:
+                                sample = f.read(1024)
+                            
+                            if ',' in sample:
+                                try:
+                                    df = pd.read_csv(file_path, nrows=5)
+                                    count = sum(1 for _ in open(file_path)) - 1  # Subtract header
+                                    
+                                    row_counts.append(count)
+                                    columns_list.append(df.columns.tolist())
+                                    
+                                    if primary_file_path is None:
+                                        primary_file_path = file_path
+                                        dataset_info["preview_file"] = file_path
+                                        dataset_info["columns"] = df.columns.tolist()
+                                        dataset_info["rows"] = count
+                                        print(f"Selected primary file (CSV-like text): {file_name}")
+                                except:
+                                    pass
+                            elif '\t' in sample:
+                                try:
+                                    df = pd.read_csv(file_path, sep='\t', nrows=5)
+                                    count = sum(1 for _ in open(file_path)) - 1
+                                    
+                                    row_counts.append(count)
+                                    columns_list.append(df.columns.tolist())
+                                    
+                                    if primary_file_path is None:
+                                        primary_file_path = file_path
+                                        dataset_info["preview_file"] = file_path
+                                        dataset_info["columns"] = df.columns.tolist()
+                                        dataset_info["rows"] = count
+                                        print(f"Selected primary file (TSV-like text): {file_name}")
+                                except:
+                                    pass
+                            
+                    except Exception as e:
+                        # Log the error but continue with other files
+                        print(f"Error analyzing data file {file_name}: {str(e)}")
+                        row_counts.append(0)
+                        columns_list.append([])
+                
+                # If we found a primary file of this format, stop looking at other formats
+                if primary_file_path is not None:
+                    break
+        
+        # Store file metadata
         dataset_info["row_counts"] = row_counts
+        dataset_info["columns_by_file"] = columns_list
+        
+        # If we found a primary file, use it for path
+        if primary_file_path:
+            dataset_info["path"] = primary_file_path
+            print(f"Using primary file for path: {primary_file_path}")
+        elif len(files) > 0:
+            # If we couldn't find a suitable data file but there are files, 
+            # use the directory as the path (avoid .DS_Store and system files)
+            real_files = [f for f in files if f not in SYSTEM_FILES and not f.startswith('.')]
+            if real_files:
+                dataset_info["path"] = path  # Use the directory
+                print(f"No suitable data files found, using directory: {path}")
+            else:
+                print("Warning: No usable files found in dataset")
+                dataset_info["path"] = path
+            
     except Exception as e:
         print(f"Error analyzing Kaggle files: {str(e)}")
     
     # Register the dataset
-    return register_dataset(dataset_info)
+    dataset_id = register_dataset(dataset_info)
+    print(f"Registered dataset with ID: {dataset_id}")
+    return dataset_id
 
 # Main function for CLI usage
 if __name__ == "__main__":

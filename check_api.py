@@ -7,7 +7,7 @@ import sys
 
 def check_api():
     """Check if the API server is running and accessible."""
-    url = "http://127.0.0.1:8080/api/v1/health"
+    url = "http://127.0.0.1:8000/api/v1/health"
     
     try:
         response = requests.get(url, timeout=5)

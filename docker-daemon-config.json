@@ -1,0 +1,22 @@
+{
+  "debug": true,
+  "experimental": false,
+  "ipv6": false,
+  "ip-forward": true,
+  "bridge": "none",
+  "iptables": true,
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "default-network-opts": {
+    "bridge": {
+      "com.docker.network.bridge.enable_icc": true,
+      "com.docker.network.bridge.enable_ip_masquerade": true,
+      "com.docker.network.driver.mtu": 1500
+    }
+  },
+  "metrics-addr": "0.0.0.0:9323",
+  "mtu": 1500
+} 

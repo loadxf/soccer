@@ -11,7 +11,7 @@ from typing import List
 # Base configuration
 API_VERSION = "v1"
 # Docker uses port 8000, not 8080
-API_PORT = 8000  
+API_PORT = 8000  # Must match docker-compose port mapping
 REQUEST_TIMEOUT = 10  # seconds
 
 # Determine the best hostname to use based on system capabilities
@@ -22,8 +22,8 @@ def get_preferred_hostname() -> str:
     """
     # Check if we're running in Docker
     if os.path.exists('/.dockerenv'):
-        # In Docker, use the service name instead of localhost
-        return 'app'
+        # In Docker, use 0.0.0.0 to allow container networking
+        return '0.0.0.0'
     
     # Try to connect to localhost first
     try:
@@ -52,6 +52,8 @@ CORS_ORIGINS: List[str] = [
     f"http://127.0.0.1:{API_PORT}",
     f"http://app:{API_PORT}",  # Add Docker service name
     f"http://ui:{UI_PORT}",    # Add Docker service name
+    f"http://frontend:80",     # Add frontend container
+    f"http://localhost:3000",  # Add mapped frontend port
     "null"  # Allow file:// protocol requests
 ]
 

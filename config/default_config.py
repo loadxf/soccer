@@ -37,9 +37,9 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
 REDIS_DB = int(os.getenv("REDIS_DB", 0))
 
 # Directory paths
-DATA_DIR = os.getenv("DATA_DIR", os.path.join(BASE_DIR, "data"))
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", os.path.join(BASE_DIR, "uploads"))
-MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", os.path.join(BASE_DIR, "model_cache"))
+DATA_DIR = Path(os.getenv("DATA_DIR", BASE_DIR / "data"))
+UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", BASE_DIR / "uploads"))
+MODEL_CACHE_DIR = Path(os.getenv("MODEL_CACHE_DIR", BASE_DIR / "model_cache"))
 
 # Ensure directories exist
 os.makedirs(DATA_DIR, exist_ok=True)

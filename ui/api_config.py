@@ -33,9 +33,10 @@ class ApiConfig:
         if self.is_docker:
             self.api_host = "app"
         else:
-            self.api_host = DEFAULT_API_HOST
+            # Try to get host from environment variable if available
+            self.api_host = os.environ.get('API_HOST', DEFAULT_API_HOST)
             
-        self.api_port = DEFAULT_API_PORT
+        self.api_port = int(os.environ.get('API_PORT', DEFAULT_API_PORT))
         self.api_timeout = DEFAULT_API_TIMEOUT
         self.fallback_mode = False
         self.session_id = int(time.time())  # Unique identifier for current session
@@ -54,6 +55,14 @@ class ApiConfig:
     
     def get_best_hostname(self) -> str:
         """Determine the best hostname to use, testing both options if needed."""
+        # Check for remote host in environment
+        remote_host = os.environ.get('REMOTE_API_HOST')
+        if remote_host and self._test_connection(remote_host):
+            logger.info(f"Remote host '{remote_host}' is accessible")
+            self.api_host = remote_host
+            self.fallback_mode = False
+            return remote_host
+        
         # In Docker, always use the container service name first
         if self.is_docker and self._test_connection("app"):
             logger.info("Docker service name 'app' is accessible")
@@ -81,8 +90,8 @@ class ApiConfig:
     def _test_connection(self, hostname: str) -> bool:
         """Test if the API is accessible using the given hostname."""
         try:
-            # First test if the hostname resolves (skip for container names)
-            if hostname not in ["app"]:
+            # First test if the hostname resolves (skip for container names and IP addresses)
+            if hostname not in ["app"] and not self._is_ip_address(hostname):
                 socket.gethostbyname(hostname)
             
             # Then test if the API responds with direct health endpoint
@@ -95,6 +104,14 @@ class ApiConfig:
             logger.warning(f"Connection test failed for {hostname}: {str(e)}")
             return False
     
+    def _is_ip_address(self, hostname: str) -> bool:
+        """Check if the hostname is an IP address."""
+        try:
+            socket.inet_aton(hostname)
+            return True
+        except socket.error:
+            return False
+    
     def get_request_url(self, endpoint: str) -> str:
         """Get the full URL for an API endpoint with current hostname."""
         # Ensure endpoint doesn't start with a slash
@@ -103,11 +120,15 @@ class ApiConfig:
     
     def reset(self) -> None:
         """Reset the configuration to defaults."""
-        if self.is_docker:
+        # Check for remote host in environment
+        remote_host = os.environ.get('REMOTE_API_HOST')
+        if remote_host:
+            self.api_host = remote_host
+        elif self.is_docker:
             self.api_host = "app"
         else:
             self.api_host = DEFAULT_API_HOST
-        self.api_port = DEFAULT_API_PORT
+        self.api_port = int(os.environ.get('API_PORT', DEFAULT_API_PORT))
         self.api_timeout = DEFAULT_API_TIMEOUT
         self.fallback_mode = False
         self.session_id = int(time.time())
@@ -127,6 +148,19 @@ def test_api_connection() -> Tuple[bool, str, Optional[dict]]:
     """
     # Check if we're running in Docker
     is_docker = os.path.exists('/.dockerenv')
+    
+    # Check for remote host in environment
+    remote_host = os.environ.get('REMOTE_API_HOST')
+    if remote_host:
+        try:
+            response = requests.get(
+                f"http://{remote_host}:{DEFAULT_API_PORT}/health",
+                timeout=DEFAULT_API_TIMEOUT
+            )
+            if response.status_code == 200:
+                return True, f"API accessible via remote host ({remote_host})", response.json()
+        except requests.RequestException:
+            pass
     
     # Try Docker service name first if in Docker
     if is_docker:

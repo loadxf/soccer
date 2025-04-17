@@ -1,0 +1,42 @@
+version: '3'
+
+services:
+  # Override the database configuration
+  db:
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=soccer_prediction
+    # Use docker secrets for more secure password handling if this is a production system
+    command: 
+      - "postgres"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Override the app configuration to ensure it uses the correct DB credentials
+  app:
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=soccer_prediction
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+        
+  # Add dependency to ensure the frontend waits for the API
+  frontend:
+    restart: on-failure
+    depends_on:
+      app:
+        condition: service_started 

@@ -77,6 +77,39 @@ The application is configured to listen on all network interfaces (0.0.0.0) by d
 
 To restrict access to localhost only, modify the startup commands to use `--server.address=127.0.0.1` instead.
 
+### Remote Server Deployment
+
+The system can be deployed to a remote server and accessed from your local machine:
+
+#### Remote Server Configuration
+
+1. **Set up the remote server**:
+   - SSH into your remote server
+   - Clone the repository and install dependencies
+   - Configure the API server to listen on all interfaces (`0.0.0.0`)
+   - Start the API server (typically on port 8000)
+
+2. **Configure your local instance**:
+   - Update the `.env.remote` file with your server details:
+     ```
+     REMOTE_API_HOST=103.163.186.204  # Replace with your server IP
+     API_PORT=8000
+     ```
+
+3. **Start the local UI connected to the remote API**:
+   - Windows: Double-click `connect_remote.bat`
+   - Linux/Mac: `python connect_remote.py`
+
+4. **Access the remote UI directly**:
+   - In your browser, navigate to: `http://103.163.186.204:8501`
+
+#### Troubleshooting Remote Connections
+
+- Ensure port 8000 (API) and 8501 (UI) are open in your server firewall
+- Verify the API server is running with `netstat -tuln | grep 8000`
+- Check that the API is binding to `0.0.0.0` (all interfaces) not just localhost
+- Run `python diagnose_api.py` to run connectivity diagnostics
+
 ### Kaggle Integration (Optional)
 
 To use Kaggle datasets:

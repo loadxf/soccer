@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import sys
+import os
 
 # Setup logging
 logging.basicConfig(
@@ -20,9 +21,20 @@ logger = logging.getLogger("simple_api_server")
 
 # Configuration
 API_HOST = "0.0.0.0"  # Listen on all interfaces for both localhost and 127.0.0.1
-API_PORT = 8080
+API_PORT = int(os.environ.get('API_PORT', 8000))
 API_VERSION = "v1"
 API_PREFIX = f"/api/{API_VERSION}"
+
+# Define allowed CORS origins
+CORS_ORIGINS = [
+    "http://localhost:8501",
+    "http://127.0.0.1:8501",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+    "http://app:8000",
+    "http://ui:8501",
+    "*"  # Allow all origins for now to ensure remote connections work
+]
 
 # Create the FastAPI app
 app = FastAPI(
@@ -36,7 +48,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for simplicity
+    allow_origins=CORS_ORIGINS,  # Use specific origins instead of wildcard
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +62,8 @@ async def add_cors_headers(request: Request, call_next):
         
         # Ensure CORS headers are set
         response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
         return response
     except Exception as e:
         logger.error(f"Error in middleware: {str(e)}")
@@ -58,7 +72,11 @@ async def add_cors_headers(request: Request, call_next):
         return JSONResponse(
             status_code=500,
             content={"error": str(e)},
-            headers={"Access-Control-Allow-Origin": "*"}
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "*"
+            }
         )
 
 # Root endpoint
@@ -71,7 +89,19 @@ async def root():
         "docs_url": f"/api/{API_VERSION}/docs",
     }
 
-# Health check endpoint
+# Health check endpoint - make this a simple root level endpoint for easier checks
+@app.get("/health")
+async def root_health_check():
+    """Root health check endpoint"""
+    return {
+        "status": "ok",
+        "api": "up",
+        "database": "unknown",
+        "models": "unknown",
+        "version": API_VERSION
+    }
+
+# Health check endpoint with API prefix
 @app.get(f"{API_PREFIX}/health")
 async def health_check():
     """Check API health"""
@@ -122,8 +152,8 @@ async def get_prediction_models():
     ]
 
 if __name__ == "__main__":
-    logger.info(f"Starting simple API server on http://127.0.0.1:{API_PORT}")
-    logger.info(f"API documentation: http://127.0.0.1:{API_PORT}{API_PREFIX}/docs")
+    logger.info(f"Starting simple API server on {API_HOST}:{API_PORT}")
+    logger.info(f"API documentation: http://localhost:{API_PORT}{API_PREFIX}/docs")
     
     try:
         uvicorn.run(app, host=API_HOST, port=API_PORT)

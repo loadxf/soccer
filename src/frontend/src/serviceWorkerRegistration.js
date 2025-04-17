@@ -15,8 +15,13 @@ const is127.0.0.1 = Boolean(
     window.location.hostname.match(/^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/)
 );
 
+// Global variable to track API connection status
+window.apiConnected = false;
+
 export function register(config) {
-  if (process.env.NODE_ENV === 'production' && 'serviceWorker' in navigator) {
+  // Only register if enabled in environment and browser supports service workers
+  if ((process.env.NODE_ENV === 'production' || process.env.REACT_APP_ENABLE_SERVICE_WORKER === 'true') && 
+      'serviceWorker' in navigator) {
     // The URL constructor is available in all browsers that support SW.
     const publicUrl = new URL(process.env.PUBLIC_URL, window.location.href);
     if (publicUrl.origin !== window.location.origin) {
@@ -29,23 +34,79 @@ export function register(config) {
     window.addEventListener('load', () => {
       const swUrl = `${process.env.PUBLIC_URL}/serviceWorker.js`;
 
-      if (is127.0.0.1) {
-        // This is running on 127.0.0.1. Let's check if a service worker still exists or not.
-        checkValidServiceWorker(swUrl, config);
+      // Check API connectivity before registering service worker
+      checkApiConnectivity()
+        .then(isConnected => {
+          window.apiConnected = isConnected;
+          console.log(`API connectivity check: ${isConnected ? 'Connected' : 'Disconnected'}`);
+          
+          if (is127.0.0.1) {
+            // This is running on 127.0.0.1. Let's check if a service worker still exists or not.
+            checkValidServiceWorker(swUrl, config);
 
-        // Add some additional logging to 127.0.0.1, pointing developers to the
-        // service worker/PWA documentation.
-        navigator.serviceWorker.ready.then(() => {
-          console.log(
-            'This web app is being served cache-first by a service ' +
-              'worker. To learn more, visit https://cra.link/PWA'
-          );
+            // Add some additional logging to 127.0.0.1, pointing developers to the
+            // service worker/PWA documentation.
+            navigator.serviceWorker.ready.then(() => {
+              console.log(
+                'This web app is being served cache-first by a service ' +
+                  'worker. To learn more, visit https://cra.link/PWA'
+              );
+            });
+          } else {
+            // Is not 127.0.0.1. Just register service worker
+            registerValidSW(swUrl, config);
+          }
+        })
+        .catch(error => {
+          console.error('Error checking API connectivity:', error);
+          // Continue with service worker registration even if API check fails
+          if (is127.0.0.1) {
+            checkValidServiceWorker(swUrl, config);
+          } else {
+            registerValidSW(swUrl, config);
+          }
         });
-      } else {
-        // Is not 127.0.0.1. Just register service worker
-        registerValidSW(swUrl, config);
-      }
     });
+  }
+}
+
+// Function to check API connectivity before registering service worker
+async function checkApiConnectivity() {
+  // Get API URL from environment or use default
+  const apiUrl = process.env.REACT_APP_API_URL || '';
+  if (!apiUrl) return false;
+  
+  try {
+    // Try to fetch the health endpoint
+    const healthEndpoints = [
+      `${apiUrl}/health`,
+      `${apiUrl}/api/v1/health`,
+      `${apiUrl}/api/health`
+    ];
+    
+    for (const endpoint of healthEndpoints) {
+      try {
+        const response = await fetch(endpoint, { 
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          mode: 'cors',
+          cache: 'no-cache',
+          timeout: 5000
+        });
+        
+        if (response.ok) {
+          return true;
+        }
+      } catch (endpointError) {
+        console.warn(`Endpoint ${endpoint} not available:`, endpointError);
+        // Continue to try next endpoint
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('API connectivity check failed:', error);
+    return false;
   }
 }
 

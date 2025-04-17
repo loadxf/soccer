@@ -1,6 +1,7 @@
 services:
   app:
     build: .
+    user: "${UID:-1000}:${GID:-1000}"  # Use host user ID to avoid permission issues
     ports:
       - "8000:8000"
       - "9091:9091"  # Prometheus metrics
@@ -13,11 +14,22 @@ services:
       - ./data:/app/data
       # Use named volume for logs directory
       - app_logs:/app/logs
+      # Mount uploads directory as a named volume for better permission handling
+      - uploads_data:/app/uploads
     env_file:
       - .env
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=soccer_prediction
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
     depends_on:
-      - db
-    command: uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
+      db:
+        condition: service_healthy
+    command: >
+      bash -c "python scripts/fix_permissions.py &&
+               uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload"
     networks:
       - soccer-net
     healthcheck:
@@ -26,6 +38,30 @@ services:
       timeout: 15s
       retries: 5
       start_period: 60s
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile.simple
+      args:
+        - NODE_ENV=production
+    ports:
+      - "3001:80"  # Map port 80 in container to 3001 on host (changed from 3000)
+    environment:
+      - REACT_APP_API_URL=http://app:8000
+      - REACT_APP_ENVIRONMENT=docker
+      - REACT_APP_ENABLE_SERVICE_WORKER=true
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - soccer-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   ui:
     build:
@@ -37,9 +73,19 @@ services:
       - ./ui:/app/ui
       - ./config:/app/config
       - ./.kaggle:/root/.kaggle  # Mount .kaggle directory for credentials
+      - ./src:/app/src  # Mount the src directory so Python can find the modules
+      - ./scripts:/app/scripts  # Mount scripts directory
+      - uploads_data:/app/uploads  # Share uploads with app container
     depends_on:
       - app
-    command: streamlit run /app/ui/app.py --server.port=8501 --server.address=0.0.0.0
+    command: bash -c "python /app/scripts/verify_all_dependencies.py && python /app/scripts/verify_tensorflow.py && streamlit run /app/ui/app.py --server.port=8501 --server.address=0.0.0.0 --browser.serverAddress=$(hostname -I | awk '{print $1}')"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_SERVER_ENABLE_CORS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+    restart: always
     networks:
       - soccer-net
 
@@ -60,6 +106,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
 
   pgadmin:
     image: dpage/pgadmin4
@@ -204,9 +251,14 @@ services:
 networks:
   soccer-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
 
 volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
-  app_logs: 
+  app_logs:
+  uploads_data: 

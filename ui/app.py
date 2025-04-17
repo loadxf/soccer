@@ -210,25 +210,51 @@ def check_api_health_with_retries(max_retries=3, initial_delay=1, backoff_factor
     # Check if we're running in Docker
     is_docker = os.path.exists('/.dockerenv')
     
-    # Define API URLs to try
-    api_urls = []
+    # Define base API hosts to try
+    api_hosts = []
     
-    # In Docker, try the container name first
+    # Check for remote host in environment variable
+    remote_host = os.environ.get('REMOTE_API_HOST')
+    remote_port = os.environ.get('API_PORT', '8000')
+    
+    # If remote host is defined, prioritize it
+    if remote_host:
+        api_hosts.append((remote_host, remote_port))
+        print(f"Will check remote API host: {remote_host}:{remote_port}")
+    
+    # In Docker, try the container name next
     if is_docker:
-        api_urls.append("http://app:8000/health")
+        api_hosts.append(("app", "8000"))
     
     # Then try localhost and IP address
-    api_urls.extend([
-        "http://localhost:8000/health",
-        "http://127.0.0.1:8000/health"
+    api_hosts.extend([
+        ("localhost", "8000"),
+        ("127.0.0.1", "8000")
     ])
+    
+    # Define endpoint patterns to try for each host
+    endpoint_patterns = [
+        "/health",             # Direct health endpoint
+        "/api/v1/health",      # API v1 health endpoint
+        "/api/health"          # Alternative health endpoint
+    ]
+    
+    # Generate all URLs to try (host + endpoint combinations)
+    api_urls = []
+    for host, port in api_hosts:
+        for endpoint in endpoint_patterns:
+            api_urls.append(f"http://{host}:{port}{endpoint}")
+    
+    # Print which URLs we're checking
+    print(f"API URLs to check: {api_urls}")
     
     # Try each URL with retries
     for url in api_urls:
         delay = initial_delay
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, timeout=2)
+                print(f"Attempt {attempt+1} for {url}")
+                response = requests.get(url, timeout=5)  # Increased timeout
                 if response.status_code == 200:
                     try:
                         data = response.json()
@@ -238,10 +264,11 @@ def check_api_health_with_retries(max_retries=3, initial_delay=1, backoff_factor
                             "message": "API is available",
                             "api_host": parsed_url.hostname,
                             "api_port": parsed_url.port,
+                            "endpoint": parsed_url.path,
                             "data": data
                         }
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"Failed to parse JSON from {url}: {str(e)}")
             except Exception as e:
                 print(f"API check attempt {attempt+1} failed for {url}: {str(e)}")
             
@@ -596,1156 +623,76 @@ def show_fallback_notification():
         "Run `python main.py api --start` to connect to the API server."
     )
 
-# Create sidebar navigation
-st.sidebar.title("Soccer Prediction System")
-
-# Use text-based logo instead of image file
-st.sidebar.markdown("""
-<div style="text-align: center; background-color: #1E3A8A; color: white; padding: 10px; border-radius: 5px; margin-bottom: 20px;">
-    <h2 style="margin: 0;">⚽ SPS</h2>
-    <p style="margin: 0; font-size: 0.8em;">Soccer Prediction System</p>
-</div>
-""", unsafe_allow_html=True)
-
-# Check API status early and store in session state
-if 'api_status' not in st.session_state or st.session_state.api_status.get('status') == 'unknown':
-    try:
-        # Use retry logic for initial check
-        api_status = check_api_health_with_retries(max_retries=3, initial_delay=1)
-        st.session_state.api_status = api_status
-        st.session_state.using_fallback = api_status.get('status') != 'online'
-    except Exception as e:
-        st.session_state.api_status = {"status": "offline", "message": f"API is unavailable: {str(e)}"}
-        st.session_state.using_fallback = True
-
-# Navigation options
-page = st.sidebar.radio(
-    "Navigate", 
-    ["Home", "Data Management", "Model Training", "Predictions", "Model Evaluation", "Explanations"]
-)
-
-# Environment info
-env_info = f"Environment: {APP_ENV.upper()}"
-if DEBUG:
-    env_info += " (Debug Mode)"
-st.sidebar.info(env_info)
-
-# API status in sidebar
-try:
-    api_status = st.session_state.api_status
-    if api_status.get('status') == 'online':
-        st.sidebar.success("✅ API Connected")
-    else:
-        st.sidebar.error("❌ API Disconnected")
-        retry_col, clear_col = st.sidebar.columns(2)
+# Add a sidebar with navigation and settings
+def create_sidebar():
+    """Create the sidebar with navigation and settings"""
+    with st.sidebar:
+        st.title("Soccer Prediction System")
         
-        with retry_col:
-            if st.button("Retry Connection"):
-                try:
-                    # Use retry logic for button click
-                    new_status = check_api_health_with_retries(max_retries=3, initial_delay=1)
-                    st.session_state.api_status = new_status
-                    st.session_state.using_fallback = new_status.get('status') != 'online'
-                    st.rerun()
-                except Exception:
-                    pass
+        # Add navigation
+        st.header("Navigation")
         
-        with clear_col:
-            if st.button("Clear Cache"):
-                clear_session_state()
-                st.rerun()
-except Exception as e:
-    st.sidebar.error(f"❌ Session Error: {str(e)}")
-    if st.sidebar.button("Reset Session"):
-        clear_session_state()
-        st.rerun()
-
-# Browser reset helper
-if st.sidebar.button("🔄 Fix Browser Issues"):
-    clear_session_state()
-    js = f'''
-    <script>
-        // Clear localStorage and sessionStorage
-        localStorage.clear();
-        sessionStorage.clear();
-        
-        // Unregister service workers
-        if (navigator.serviceWorker) {{
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {{
-                for (let registration of registrations) {{
-                    registration.unregister();
-                }}
-            }});
-        }}
-        
-        // Reload the page with force_reset
-        window.location.href = window.location.pathname + "?force_reset=true";
-    </script>
-    '''
-    st.components.v1.html(js, height=0)
-    st.rerun()
-
-# Version info
-st.sidebar.caption("v1.0.0")
-
-# Show fallback notification if using fallback data
-try:
-    if st.session_state.using_fallback:
-        show_fallback_notification()
-except Exception as e:
-    st.error(f"Session state error: {str(e)}. Try refreshing the page or clearing cache.")
-    if st.button("Reset Session State"):
-        clear_session_state()
-        st.rerun()
-
-# Main content
-if page == "Home":
-    # Apply browser console warning suppression
-    suppress_browser_warnings()
-    
-    st.title("⚽ Soccer Prediction System")
-    st.subheader("Machine Learning Platform for Soccer Match Outcome Prediction")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("""
-        ## Welcome to the Soccer Prediction Dashboard
-        
-        This interactive interface allows you to:
-        
-        - **Manage data** - Import, explore, and process soccer datasets
-        - **Train models** - Configure and train ML models with different algorithms
-        - **Make predictions** - Predict outcomes for upcoming soccer matches
-        - **Evaluate performance** - Analyze model metrics and compare results
-        - **Explain predictions** - Understand the factors influencing match predictions
-        
-        Use the sidebar navigation to access different features.
-        """)
-        
-        st.info("To get started, navigate to 'Data Management' to prepare your datasets.")
-        
-        # Add debug information section
-        show_debug_info()
-        
-    with col2:
-        st.markdown("### System Status")
-        
-        # API status check
-        try:
-            if api_status.get('status') == 'online':
-                st.success("✅ API Server: Connected")
-                st.success("✅ Database: Connected")
-                st.success("✅ Model Cache: Available")
-            else:
-                st.error(f"❌ API Server: {api_status.get('message', 'Not Connected')}")
-                
-                # Add a more specific instruction for starting the API
-                st.warning("""
-                Please start the API server with one of these methods:
-                - `start_system.bat` - Starts both API and UI together
-                - `python main.py api --start` - Starts only the API
-                """)
-        except Exception as e:
-            st.error(f"❌ System Status Error: {str(e)}")
-            st.warning("Session state may be corrupted. Try refreshing or clearing cache.")
-        
-        # Quick actions
-        st.markdown("### Quick Actions")
-        
-        quick_links = {
-            "Train New Model": "Model Training",
-            "Make Prediction": "Predictions",
-            "View Model Performance": "Model Evaluation"
+        # Main Navigation
+        pages = {
+            "Home": "Home page with overview and recent matches",
+            "Predictions": "Make match outcome predictions",
+            "Data Management": "Manage datasets and features",
+            "Model Management": "Train and manage prediction models",
+            "Evaluation": "Evaluate model performance",
+            "System Status": "View system health and status",
+            "Dependency Check": "Verify system dependencies"
         }
         
-        for label, target in quick_links.items():
-            if st.button(label):
-                # Update query params with modern approach
-                st.query_params.update(page=target)
-                st.rerun()
+        selected_page = st.radio("Select a page", list(pages.keys()), 
+                                index=0, help="Navigate between different sections of the app")
         
-        st.markdown("### Troubleshooting")
-        st.markdown("""
-        Having issues with the UI?
-        - Run [`fix_session_errors.bat`](.) for advanced browser cleaning
-        - Run [`clear_browser_cache.bat`](.) for basic cache clearing
-        - Try a [hard refresh](.) (Ctrl+F5)
-        - Use [incognito mode](.) for testing
-        - Try accessing with [127.0.0.1](http://127.0.0.1:8501) instead of localhost
-        """)
+        # Display help text for the selected page
+        st.info(pages[selected_page])
         
-        # Add emergency fix button
-        if st.button("🔧 Emergency Session Fix"):
-            st.warning("Running advanced browser session fix...")
-            js = """
-            <script>
-            (function() {
-                // Aggressive clearing of browser storage
-                try {
-                    // Clear all types of storage
-                    localStorage.clear();
-                    sessionStorage.clear();
-                    
-                    // Try to clear IndexedDB
-                    if (window.indexedDB) {
-                        window.indexedDB.databases().then(dbs => {
-                            dbs.forEach(db => {
-                                window.indexedDB.deleteDatabase(db.name);
-                            });
-                        }).catch(e => console.error('IndexedDB clear failed:', e));
-                    }
-                    
-                    // Try to clear Cache API
-                    if (window.caches) {
-                        caches.keys().then(names => {
-                            names.forEach(name => {
-                                caches.delete(name);
-                            });
-                        }).catch(e => console.error('Cache API clear failed:', e));
-                    }
-                    
-                    // Unregister service workers
-                    if (navigator.serviceWorker) {
-                        navigator.serviceWorker.getRegistrations().then(registrations => {
-                            registrations.forEach(registration => {
-                                registration.unregister();
-                            });
-                        }).catch(e => console.error('Service worker unregister failed:', e));
-                    }
-                    
-                    // Generate a fresh session ID to prevent conflicts
-                    const freshSessionId = Date.now().toString(36) + Math.random().toString(36).substring(2);
-                    
-                    // Create an on-screen notification
-                    const notifyDiv = document.createElement('div');
-                    notifyDiv.style.position = 'fixed';
-                    notifyDiv.style.top = '50%';
-                    notifyDiv.style.left = '50%';
-                    notifyDiv.style.transform = 'translate(-50%, -50%)';
-                    notifyDiv.style.padding = '20px';
-                    notifyDiv.style.backgroundColor = '#4CAF50';
-                    notifyDiv.style.color = 'white';
-                    notifyDiv.style.borderRadius = '10px';
-                    notifyDiv.style.zIndex = '9999';
-                    notifyDiv.style.textAlign = 'center';
-                    notifyDiv.innerHTML = '<strong>Session Fix Applied!</strong><br>Refreshing page in 3 seconds...';
-                    document.body.appendChild(notifyDiv);
-                    
-                    // Redirect to IP address version with force_reset after 3 seconds
-                    setTimeout(() => {
-                        window.location.href = "http://127.0.0.1:8501?force_reset=true&ts=" + Date.now() + "&sid=" + freshSessionId;
-                    }, 3000);
-                } catch (e) {
-                    console.error('Emergency fix error:', e);
-                    // Still try to redirect even if errors occur
-                    window.location.href = "http://127.0.0.1:8501?force_reset=true&ts=" + Date.now();
-                }
-            })();
-            </script>
-            """
-            st.components.v1.html(js, height=0)
+        # Show API status
+        api_status = safe_get_session('api_status', {"status": "unknown", "message": "Initializing..."})
+        st.write("---")
+        
+        # System Version
+        st.caption("Version: 0.9.5-beta")
+        
+        # Return the selected page
+        return selected_page
 
-elif page == "Data Management":
-    # Apply browser console warning suppression
+# Add the dependency page to the page mapping
+def show_verify_deps_page():
+    """Show the dependency verification page"""
+    import ui.verify_deps
+    # This imports and runs the verify_deps.py script
+
+# Main navigation handler
+def main():
+    """Main navigation handler"""
+    
+    # Create the sidebar
+    selected_page = create_sidebar()
+    
+    # Suppress browser warnings
     suppress_browser_warnings()
     
-    st.title("📊 Data Management")
-    st.subheader("Import, Explore, and Process Soccer Datasets")
-    
-    # Import our DataManager
-    from ui.data_manager import DataManager
-    data_manager = DataManager()
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("""
-        ## Dataset Management
-        
-        This section allows you to:
-        - Import datasets from various sources
-        - Explore and preview data
-        - Process and transform datasets
-        - Manage your dataset library
-        """)
-        
-        # File upload section
-        st.markdown("### Upload Dataset")
-        uploaded_files = st.file_uploader("Choose a file", type=["csv", "xlsx", "xls", "json"], accept_multiple_files=True)
-        st.caption("Limit 1000MB per file • CSV, XLSX, XLS, JSON")
-        
-        if uploaded_files:
-            st.info(f"📤 {len(uploaded_files)} files selected for upload")
-            
-            if st.button("Upload Files"):
-                for uploaded_file in uploaded_files:
-                    data_manager.upload_file(uploaded_file)
-        
-        # Dataset listing
-        st.markdown("### Available Datasets")
-        all_datasets = data_manager.get_all_datasets()
-        
-        if not all_datasets:
-            st.info("No datasets available. Upload datasets to get started.")
-        else:
-            # Create a DataFrame for display
-            display_data = []
-            for ds in all_datasets:
-                display_data.append({
-                    "ID": ds.get("id", "Unknown"),
-                    "Name": ds.get("name", "Unnamed Dataset"),
-                    "Rows": ds.get("rows", 0),
-                    "Columns": len(ds.get("columns", [])),
-                    "Status": ds.get("status", "unknown").capitalize(),
-                    "Upload Date": ds.get("upload_date", "").split("T")[0]
-                })
-            
-            df_datasets = pd.DataFrame(display_data)
-            
-            # Multiselect for batch operations
-            selected_ids = st.multiselect(
-                "Select datasets for batch operations",
-                options=df_datasets["ID"].tolist(),
-                format_func=lambda x: next((ds.get("name", "Unknown") for ds in all_datasets if ds.get("id") == x), x)
-            )
-            
-            # Display dataset table
-            st.dataframe(df_datasets)
-            
-            # Preview section
-            if df_datasets["ID"].tolist():
-                st.markdown("### Dataset Preview")
-                preview_id = st.selectbox(
-                    "Select a dataset to preview",
-                    options=df_datasets["ID"].tolist(),
-                    format_func=lambda x: next((ds.get("name", "Unknown") for ds in all_datasets if ds.get("id") == x), x)
-                )
-                
-                if preview_id:
-                    preview_df = data_manager.get_dataset_preview(preview_id)
-                    if preview_df is not None:
-                        st.dataframe(preview_df)
-            
-            # Batch operations section
-            if selected_ids:
-                st.markdown("### Batch Operations")
-                st.info(f"📋 {len(selected_ids)} datasets selected")
-                
-                operation = st.selectbox(
-                    "Select operation",
-                    options=["Process datasets", "Feature engineering", "Delete selected"]
-                )
-                
-                if st.button("Execute Operation"):
-                    if operation == "Delete selected":
-                        for dataset_id in selected_ids:
-                            data_manager.delete_dataset(dataset_id)
-                        st.rerun()
-                    elif operation == "Process datasets":
-                        data_manager.batch_process_datasets(selected_ids, "process")
-                    elif operation == "Feature engineering":
-                        data_manager.batch_process_datasets(selected_ids, "features")
-        
-        # Add debug info
-        show_debug_info()
-    
-    with col2:
-        st.markdown("### Import Options")
-        
-        import_source = st.selectbox(
-            "Import from source:",
-            options=["Upload File", "Kaggle Dataset", "Football API", "Sample Data"]
-        )
-        
-        if import_source == "Kaggle Dataset":
-            if data_manager.kaggle_available:
-                st.markdown("#### Import from Kaggle")
-                kaggle_dataset = st.text_input("Enter Kaggle dataset name (e.g., 'owner/dataset-name')")
-                
-                if st.button("Import Dataset") and kaggle_dataset:
-                    data_manager.import_kaggle_dataset(kaggle_dataset)
-            else:
-                st.error("Kaggle credentials not found")
-                with st.expander("Kaggle Setup Instructions"):
-                    data_manager.show_kaggle_setup_instructions()
-        
-        elif import_source == "Football API":
-            st.markdown("#### Import Football Data")
-            
-            leagues = st.multiselect(
-                "Select leagues:",
-                options=["Premier League", "La Liga", "Bundesliga", "Serie A", "Ligue 1"],
-                default=["Premier League"]
-            )
-            
-            seasons = st.multiselect(
-                "Select seasons:",
-                options=[f"20{i}/{i+1}" for i in range(10, 25)],  # Updated to include up to 24/25
-                default=["2022/23"]
-            )
-            
-            if st.button("Import Football Data"):
-                data_manager.download_football_data(leagues, seasons)
-        
-        elif import_source == "Sample Data":
-            st.markdown("#### Sample Datasets")
-            
-            sample_datasets = [
-                "Premier League 2022/23",
-                "Basic Soccer Stats",
-                "Player Performance Data"
-            ]
-            
-            sample_to_import = st.selectbox("Select sample dataset:", options=sample_datasets)
-            
-            if st.button("Import Sample"):
-                st.success(f"Sample dataset '{sample_to_import}' imported")
-                # Here you'd call a function to import the selected sample dataset
-        
-        # Actions
-        st.markdown("### Actions")
-        
-        refresh_col, clear_col = st.columns(2)
-        
-        with refresh_col:
-            if st.button("🔄 Refresh"):
-                st.rerun()
-        
-        with clear_col:
-            if st.button("🗑 Clear All"):
-                if st.session_state.get('selected_datasets'):
-                    st.session_state['selected_datasets'] = []
-                st.rerun()
-        
-        # System status
-        st.markdown("### System Status")
-        if data_manager.registry_available:
-            st.success("✅ Dataset Registry: Available")
-        else:
-            st.error("❌ Dataset Registry: Unavailable")
-        
-        if data_manager.kaggle_available:
-            st.success("✅ Kaggle API: Configured")
-            if st.button("Test Kaggle Connection"):
-                data_manager.verify_kaggle_setup()
-        else:
-            st.error("❌ Kaggle API: Not Configured")
-
-elif page == "Model Training":
-    # Apply browser console warning suppression
-    suppress_browser_warnings()
-    
-    st.title("🧠 Model Training")
-    st.subheader("Train and Optimize Soccer Prediction Models")
-    
-    # Get available datasets
-    datasets = get_available_datasets()
-    
-    if not datasets:
-        st.error("No datasets available. Please download or import datasets first.")
-        st.stop()
-    
-    # Set up the form
-    with st.form("model_training_form"):
-        # Select dataset
-        selected_dataset = st.selectbox("Select Dataset", datasets)
-        
-        # Select model type
-        model_types = [
-            "logistic", 
-            "random_forest", 
-            "xgboost", 
-            "dixon_coles"  # Add Dixon-Coles model
-        ]
-        selected_model = st.selectbox(
-            "Select Model Type", 
-            model_types,
-            help="Choose the type of model to train. The Dixon-Coles model is a soccer-specific distribution model."
-        )
-        
-        # Show advanced options based on model type
-        if selected_model == "dixon_coles":
-            # Dixon-Coles specific options
-            match_weight_days = st.slider(
-                "Match Weight Half-life (days)", 
-                min_value=30, 
-                max_value=365, 
-                value=90,
-                help="Number of days after which a match's influence is halved"
-            )
-            st.info("The Dixon-Coles model is a specialized soccer prediction model that directly models goal distributions.")
-            
-            # No feature selection or hyperparameter tuning for Dixon-Coles
-            feature_type = None
-            target_col = None
-            hyperparameter_tuning = False
-            
-        else:
-            # Feature options for traditional ML models
-            feature_types = ["match_features", "team_features", "advanced_features"]
-            feature_type = st.selectbox(
-                "Select Feature Type", 
-                feature_types,
-                help="Choose the type of features to use for training"
-            )
-            
-            # Target column
-            target_options = ["result", "home_win", "total_goals", "goal_difference"]
-            target_col = st.selectbox(
-                "Select Target Variable", 
-                target_options,
-                help="Choose what the model should predict"
-            )
-            
-            # Hyperparameter tuning option
-            hyperparameter_tuning = st.checkbox(
-                "Perform Hyperparameter Tuning", 
-                value=False,
-                help="Use grid search to find optimal hyperparameters (takes longer)"
-            )
-            
-            # Show advanced features note
-            if feature_type == "advanced_features":
-                st.info("Advanced features include team form, expected goals, and other soccer-specific metrics.")
-        
-        # Test size slider
-        test_size = st.slider("Test Set Size", min_value=0.1, max_value=0.5, value=0.2, step=0.05)
-        
-        # Random state for reproducibility
-        random_state = st.number_input("Random Seed", min_value=1, max_value=10000, value=42)
-        
-        # Submit button
-        submit_button = st.form_submit_button("Train Model")
-    
-    # Process form submission
-    if submit_button:
-        try:
-            with st.spinner("Training model... This may take a while."):
-                # Prepare model parameters
-                if selected_model == "dixon_coles":
-                    model_params = {
-                        "match_weight_days": match_weight_days
-                    }
-                    
-                    # Call training function
-                    from src.models.training import train_model
-                    
-                    results = train_model(
-                        model_type=selected_model,
-                        dataset_name=selected_dataset,
-                        model_params=model_params
-                    )
-                    
-                else:
-                    # Call training function for traditional ML models
-                    from src.models.training import train_model
-                    
-                    results = train_model(
-                        model_type=selected_model,
-                        dataset_name=selected_dataset,
-                        feature_type=feature_type,
-                        target_col=target_col,
-                        test_size=test_size,
-                        hyperparameter_tuning=hyperparameter_tuning,
-                        random_state=random_state
-                    )
-                
-                # Check if training was successful
-                if not results:
-                    st.error("Model training failed. Check logs for details.")
-                    st.stop()
-                
-                if isinstance(results, dict) and results.get("success", True):
-                    # Show success message
-                    st.success("Model training completed successfully!")
-                    
-                    # Display training results
-                    st.subheader("Training Results")
-                    
-                    # Format results for display
-                    if selected_model == "dixon_coles":
-                        # Show Dixon-Coles specific results
-                        metrics = {
-                            "Model Type": results.get("model_type", "dixon_coles"),
-                            "Dataset": results.get("dataset_name", selected_dataset),
-                            "Number of Matches": results.get("num_matches", "N/A"),
-                            "Number of Teams": results.get("num_teams", "N/A"),
-                            "Home Advantage": f"{results.get('home_advantage', 0):.4f}",
-                            "Training Duration": f"{results.get('training_duration', 0):.2f} seconds",
-                            "Model Path": results.get("model_path", "N/A")
-                        }
-                        
-                        # Display metrics
-                        for metric, value in metrics.items():
-                            st.text(f"{metric}: {value}")
-                        
-                        # If ratings path is provided, try to load and display top teams
-                        ratings_path = results.get("ratings_path")
-                        if ratings_path and os.path.exists(ratings_path):
-                            try:
-                                import pandas as pd
-                                ratings = pd.read_csv(ratings_path)
-                                
-                                # Sort by overall rating
-                                ratings = ratings.sort_values("overall", ascending=False)
-                                
-                                # Display top 10 teams
-                                st.subheader("Top Teams by Strength")
-                                st.dataframe(ratings.head(10))
-                            except Exception as e:
-                                st.warning(f"Could not load team ratings: {e}")
-                    
-                    else:
-                        # Show traditional ML model results
-                        metrics = {
-                            "Model Type": results.get("model_type", selected_model),
-                            "Dataset": results.get("dataset_name", selected_dataset),
-                            "Feature Type": results.get("feature_type", feature_type),
-                            "Target Column": results.get("target_col", target_col),
-                            "Test Size": results.get("test_size", test_size),
-                            "Training Duration": f"{results.get('training_duration', 0):.2f} seconds",
-                            "Model Path": results.get("model_path", "N/A")
-                        }
-                        
-                        # Display metrics
-                        for metric, value in metrics.items():
-                            st.text(f"{metric}: {value}")
-                        
-                        # Display evaluation metrics
-                        evaluation = results.get("evaluation", {})
-                        if evaluation:
-                            st.subheader("Evaluation Metrics")
-                            
-                            # Format evaluation metrics
-                            eval_metrics = {
-                                "Accuracy": f"{evaluation.get('accuracy', 0):.4f}",
-                                "F1 Score (Macro)": f"{evaluation.get('f1_macro', 0):.4f}",
-                                "F1 Score (Weighted)": f"{evaluation.get('f1_weighted', 0):.4f}",
-                                "Log Loss": f"{evaluation.get('log_loss', 0):.4f}" if "log_loss" in evaluation else "N/A"
-                            }
-                            
-                            # Display evaluation metrics
-                            for metric, value in eval_metrics.items():
-                                st.text(f"{metric}: {value}")
-                    
-                    # Display hyperparameter tuning results if available
-                    if hyperparameter_tuning and "hyperparameter_tuning_results" in results:
-                        st.subheader("Hyperparameter Tuning Results")
-                        tuning_results = results["hyperparameter_tuning_results"]
-                        
-                        # Display best parameters
-                        st.text(f"Best Parameters: {tuning_results.get('best_params', {})}")
-                        st.text(f"Best Score: {tuning_results.get('best_score', 0):.4f}")
-                    
-                    # Option to create ensemble
-                    st.subheader("Add to Ensemble")
-                    ensemble_id = st.text_input("Ensemble ID (leave empty to create new)")
-                    
-                    if st.button("Add to Ensemble"):
-                        try:
-                            from src.models.ensemble import EnsemblePredictor
-                            
-                            if not ensemble_id:
-                                # Create new ensemble with timestamp as ID
-                                from datetime import datetime
-                                ensemble_id = f"ensemble_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                            
-                            # Initialize ensemble
-                            ensemble = EnsemblePredictor.load(ensemble_id)
-                            
-                            if ensemble is None:
-                                # Create new ensemble
-                                ensemble = EnsemblePredictor(ensemble_id)
-                            
-                            # Add the model
-                            model_path = results.get("model_path")
-                            if selected_model == "dixon_coles":
-                                model_type = "distribution"
-                            else:
-                                model_type = "ml"
-                                
-                            model_id = f"{selected_model}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                            
-                            success = ensemble.add_model(model_id, model_path, model_type)
-                            
-                            if success:
-                                # If evaluation metrics available, set performance
-                                if selected_model != "dixon_coles" and "evaluation" in results:
-                                    ensemble.set_model_performance(model_id, results["evaluation"])
-                                
-                                # Save the ensemble
-                                ensemble_path = ensemble.save()
-                                st.success(f"Added model to ensemble {ensemble_id}")
-                                st.text(f"Ensemble saved to {ensemble_path}")
-                            else:
-                                st.error(f"Failed to add model to ensemble {ensemble_id}")
-                        except Exception as e:
-                            st.error(f"Error adding model to ensemble: {e}")
-                
-                else:
-                    # Show error message
-                    st.error(f"Model training failed: {results.get('message', 'Unknown error')}")
-        
-        except Exception as e:
-            st.error(f"Error during model training: {e}")
-            import traceback
-            st.text(traceback.format_exc())
-
-elif page == "Predictions":
-    # Apply browser console warning suppression
-    suppress_browser_warnings()
-    
-    st.title("🔮 Predictions")
-    st.subheader("Predict Outcomes for Soccer Matches")
-    
-    # Under development notice
-    st.info("⚠️ This feature is under active development. Basic functionality is available.")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("""
-        ## Match Prediction
-        
-        This section allows you to:
-        - Select a trained model
-        - Enter match details
-        - Get predicted outcomes
-        - View prediction confidence
-        - Explore alternative scenarios
-        """)
-        
-        # Placeholder for prediction form
-        st.markdown("### Match Details")
-        
-        team_col1, team_col2 = st.columns(2)
-        with team_col1:
-            st.selectbox("Home Team", ["Manchester City", "Arsenal", "Manchester United", "Liverpool", "Chelsea"])
-        with team_col2:
-            st.selectbox("Away Team", ["Liverpool", "Manchester United", "Arsenal", "Chelsea", "Tottenham"])
-        
-        form_col1, form_col2 = st.columns(2)
-        with form_col1:
-            st.selectbox("Home Team Form", ["Excellent", "Good", "Average", "Poor"])
-        with form_col2:
-            st.selectbox("Away Team Form", ["Excellent", "Good", "Average", "Poor"])
-        
-        st.markdown("### Additional Factors")
-        factor_col1, factor_col2, factor_col3 = st.columns(3)
-        with factor_col1:
-            st.checkbox("Derby Match")
-        with factor_col2:
-            st.checkbox("Injury Concerns")
-        with factor_col3:
-            st.checkbox("Weather Impact")
-        
-        if st.button("Generate Prediction"):
-            st.success("Prediction: Home Win (63% probability)")
-            st.progress(63)
-            st.markdown("**Outcome Probabilities:**")
-            st.text("Home Win: 63%\nDraw: 24%\nAway Win: 13%")
-        
-        # Add debug info
-        show_debug_info()
-    
-    with col2:
-        st.markdown("### Prediction Models")
-        st.selectbox("Select Model", ["Best Available Model", "RandomForest_EPL_2023", "GradientBoost_Demo"])
-        
-        st.markdown("### Recent Predictions")
-        st.table([
-            {"match": "Arsenal vs Chelsea", "prediction": "Home Win", "actual": "Home Win", "date": "2023-05-28"},
-            {"match": "Liverpool vs Man Utd", "prediction": "Draw", "actual": "Away Win", "date": "2023-05-21"}
-        ])
-        
-        st.markdown("### System Status")
-        # API status check
-        try:
-            if api_status.get('status') == 'online':
-                st.success("✅ Prediction API: Available")
-                st.success("✅ Models: Available")
-            else:
-                st.error("❌ Prediction Services: Unavailable")
-                st.warning("API connection required for match predictions.")
-        except Exception as e:
-            st.error(f"❌ System Status Error: {str(e)}")
-
-elif page == "Model Evaluation":
-    # Apply browser console warning suppression
-    suppress_browser_warnings()
-    
-    st.title("📈 Model Evaluation")
-    st.subheader("Analyze Model Performance and Compare Results")
-    
-    # Under development notice
-    st.info("⚠️ This feature is under active development. Basic functionality is available.")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("""
-        ## Performance Analysis
-        
-        This section allows you to:
-        - View model performance metrics
-        - Compare multiple models
-        - Analyze prediction accuracy
-        - Identify strengths and weaknesses
-        - Export evaluation reports
-        """)
-        
-        # Placeholder for model selection
-        st.markdown("### Select Models to Evaluate")
-        st.multiselect(
-            "Models", 
-            ["RandomForest_EPL_2023", "GradientBoost_Demo", "LogisticRegression_EPL_2023"],
-            ["RandomForest_EPL_2023", "GradientBoost_Demo"]
-        )
-        
-        st.markdown("### Performance Metrics")
-        metrics = {
-            "Model": ["RandomForest_EPL_2023", "GradientBoost_Demo"],
-            "Accuracy": ["76.3%", "72.1%"],
-            "Precision": ["79.2%", "74.5%"],
-            "Recall": ["73.8%", "71.2%"],
-            "F1 Score": ["76.4%", "72.8%"]
-        }
-        st.table(metrics)
-        
-        # Placeholder visualization
-        st.markdown("### Visualization")
-        st.markdown("*Accuracy Comparison Chart would appear here*")
-        
-        # Add debug info
-        show_debug_info()
-    
-    with col2:
-        st.markdown("### Quick Actions")
-        st.button("Generate Full Report")
-        st.button("Test on New Data")
-        st.button("Export Metrics")
-        
-        st.markdown("### Evaluation Settings")
-        st.checkbox("Include Confidence Intervals")
-        st.checkbox("Show All Metrics")
-        st.checkbox("Compare to Baseline")
-        
-        st.markdown("### System Status")
-        # API status check
-        try:
-            if api_status.get('status') == 'online':
-                st.success("✅ Evaluation API: Available")
-                st.success("✅ Report Generation: Available")
-            else:
-                st.error("❌ Evaluation Services: Unavailable")
-                st.warning("API connection required for advanced evaluation.")
-        except Exception as e:
-            st.error(f"❌ System Status Error: {str(e)}")
-
-elif page == "Explanations":
-    # Apply browser console warning suppression
-    suppress_browser_warnings()
-    
-    st.title("🔍 Explanations")
-    st.subheader("Understand Model Predictions and Feature Importance")
-    
-    # Under development notice
-    st.info("⚠️ This feature is under active development. Basic functionality is available.")
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("""
-        ## Explainable AI
-        
-        This section allows you to:
-        - Understand model decision factors
-        - View feature importance
-        - Analyze specific predictions
-        - Compare factor weights across models
-        - Generate interpretable reports
-        """)
-        
-        # Placeholder for model and prediction selection
-        st.markdown("### Select Model and Prediction")
-        explain_col1, explain_col2 = st.columns(2)
-        with explain_col1:
-            st.selectbox("Model for Explanation", ["RandomForest_EPL_2023", "GradientBoost_Demo"])
-        with explain_col2:
-            st.selectbox("Prediction to Explain", ["Arsenal vs Chelsea (2023-05-28)", "Liverpool vs Man Utd (2023-05-21)"])
-        
-        st.markdown("### Feature Importance")
-        st.markdown("*Feature importance visualization would appear here*")
-        
-        st.markdown("### Explanation Details")
-        st.markdown("""
-        The prediction was primarily influenced by:
-        1. Home team's recent form (42% impact)
-        2. Head-to-head history (27% impact)
-        3. Key player availability (18% impact)
-        4. Current league positions (13% impact)
-        """)
-        
-        # Add debug info
-        show_debug_info()
-    
-    with col2:
-        st.markdown("### Explanation Methods")
-        st.selectbox("Explanation Type", ["SHAP Values", "Feature Importance", "Partial Dependence", "LIME"])
-        
-        st.markdown("### Visualization Settings")
-        st.checkbox("Show Top Features Only", True)
-        st.slider("Number of Features", 3, 10, 5)
-        st.checkbox("Include Numerical Values", True)
-        
-        st.markdown("### System Status")
-        # API status check
-        try:
-            if api_status.get('status') == 'online':
-                st.success("✅ Explanation API: Available")
-                st.success("✅ SHAP Engine: Available")
-            else:
-                st.error("❌ Explanation Services: Unavailable")
-                st.warning("API connection required for model explanations.")
-        except Exception as e:
-            st.error(f"❌ System Status Error: {str(e)}")
-
-# Add function to help users set up Kaggle
-def setup_kaggle_helper():
-    """Display comprehensive instructions for setting up Kaggle credentials."""
-    st.markdown("""
-    ## Setting up Kaggle Credentials
-
-    To use Kaggle datasets, you need to complete the following steps:
-    """)
-    
-    # Step 1: Install kaggle package
-    st.markdown("### Step 1: Install the Kaggle package")
-    st.code("pip install kaggle", language="bash")
-    
-    # Step 2: Create Kaggle account
-    st.markdown("### Step 2: Create a Kaggle account")
-    st.markdown("""
-    If you don't already have a Kaggle account:
-    1. Go to [kaggle.com/account/login](https://www.kaggle.com/account/login)
-    2. Click on "Sign Up" and complete the registration process
-    """)
-    
-    # Step 3: Generate API token
-    st.markdown("### Step 3: Generate an API token")
-    st.markdown("""
-    1. Log in to your Kaggle account
-    2. Go to your account settings: [kaggle.com/settings](https://www.kaggle.com/settings)
-    3. Scroll down to the "API" section
-    4. Click "Create New API Token"
-    5. This will download a file called `kaggle.json` containing your credentials
-    """)
-    
-    # Step 4: Set up credentials
-    st.markdown("### Step 4: Set up your credentials")
-    
-    # Detect the user's OS
-    import platform
-    user_os = platform.system()
-    
-    if user_os == "Windows":
-        # Windows instructions
-        import os
-        kaggle_dir = os.path.expanduser('~/.kaggle')
-        
-        st.markdown(f"""
-        **Windows Setup:**
-        
-        1. Create the kaggle directory:
-        ```
-        mkdir "{kaggle_dir}"
-        ```
-        
-        2. Copy your downloaded `kaggle.json` file to:
-        ```
-        {kaggle_dir}\\kaggle.json
-        ```
-        
-        You can do this with File Explorer by copying the file to:
-        ```
-        {kaggle_dir}
-        ```
-        """)
-    
-    elif user_os == "Darwin":  # macOS
-        # macOS instructions
-        st.markdown("""
-        **macOS Setup:**
-        
-        1. Create the kaggle directory:
-        ```
-        mkdir -p ~/.kaggle
-        ```
-        
-        2. Copy your downloaded `kaggle.json` file:
-        ```
-        cp ~/Downloads/kaggle.json ~/.kaggle/
-        ```
-        
-        3. Set proper permissions:
-        ```
-        chmod 600 ~/.kaggle/kaggle.json
-        ```
-        """)
-    
-    else:  # Linux and others
-        # Linux instructions
-        st.markdown("""
-        **Linux Setup:**
-        
-        1. Create the kaggle directory:
-        ```
-        mkdir -p ~/.kaggle
-        ```
-        
-        2. Copy your downloaded `kaggle.json` file:
-        ```
-        cp ~/Downloads/kaggle.json ~/.kaggle/
-        ```
-        
-        3. Set proper permissions:
-        ```
-        chmod 600 ~/.kaggle/kaggle.json
-        ```
-        """)
-    
-    # Step 5: Alternative environment variable setup
-    st.markdown("### Alternative: Environment Variable Setup")
-    st.markdown("""
-    Instead of using the `kaggle.json` file, you can set environment variables:
-    
-    1. Open your `kaggle.json` file and note the username and key values
-    2. Set the following environment variables:
-    """)
-    
-    if user_os == "Windows":
-        st.code("""
-setx KAGGLE_USERNAME your_username
-setx KAGGLE_KEY your_key
-        """, language="bash")
-    else:
-        st.code("""
-export KAGGLE_USERNAME=your_username
-export KAGGLE_KEY=your_key
-        """, language="bash")
-    
-    # Verification step
-    st.markdown("### Step 5: Verify your setup")
-    st.markdown("""
-    After setting up your credentials, you can verify that everything is working correctly:
-    """)
-    
-    # Add verification button
-    if st.button("Verify Kaggle Setup"):
-        try:
-            import kaggle
-            try:
-                # Try to authenticate with Kaggle
-                kaggle.api.authenticate()
-                
-                # If we get here, authentication worked
-                st.success("✅ Kaggle credentials verified successfully!")
-                st.info("You can now use Kaggle datasets in the application.")
-                
-                # Show some available dataset info
-                try:
-                    datasets = kaggle.api.dataset_list(search="soccer")
-                    if datasets:
-                        st.success(f"Found {len(datasets)} soccer-related datasets on Kaggle!")
-                except Exception as e:
-                    # Don't show API errors, just show success for auth
-                    pass
-                
-            except Exception as auth_e:
-                st.error(f"❌ Kaggle authentication failed: {str(auth_e)}")
-                
-                # Check common issues
-                import os
-                kaggle_dir = os.path.expanduser('~/.kaggle')
-                kaggle_json = os.path.join(kaggle_dir, 'kaggle.json')
-                
-                if not os.path.exists(kaggle_json):
-                    st.warning(f"The kaggle.json file was not found at: {kaggle_json}")
-                    st.info("Please follow the instructions above to set up your credentials.")
-                else:
-                    st.info(f"The kaggle.json file exists at: {kaggle_json}")
-                    st.warning("However, there might be an issue with the file content or permissions.")
-                
-                # Check environment variables
-                if os.environ.get('KAGGLE_USERNAME') and os.environ.get('KAGGLE_KEY'):
-                    st.info("Environment variables KAGGLE_USERNAME and KAGGLE_KEY are set.")
-                    st.warning("However, there might be an issue with the values.")
-                else:
-                    st.info("Environment variables KAGGLE_USERNAME and KAGGLE_KEY are not set.")
-        
-        except ImportError:
-            st.error("❌ Kaggle package is not installed")
-            st.info("Please install it with: pip install kaggle")
-    
-    # Add a note about restarting
-    st.warning("Note: After setting up your credentials, you may need to restart the application for changes to take effect.")
-
-# Helper function to handle kaggle imports safely
-def safe_kaggle_import():
-    """Try to import kaggle and handle common issues."""
-    try:
-        import kaggle
-        return True, None
-    except ImportError:
-        return False, "Kaggle package is not installed. Please run: pip install kaggle"
-    except Exception as e:
-        if "kaggle.json" in str(e):
-            return False, "Kaggle credentials not set up correctly. See setup instructions."
-        return False, f"Error with Kaggle: {str(e)}"
-
-def start_app():
-    """
-    Start the Streamlit app in the current process.
-    This function is called by the main script when starting the UI.
-    
-    It handles different methods of starting Streamlit based on what's available.
-    """
-    # Setup logging
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger("ui.app")
-    
-    # Store original sys.argv
-    original_argv = sys.argv.copy()
-    
-    try:
-        # Directly use subprocess to start Streamlit
-        import subprocess
-        logger.info("Starting Streamlit using subprocess method...")
-        
-        # Find streamlit executable
-        streamlit_executable = "streamlit"
-        
-        cmd = [
-            streamlit_executable, "run", 
-            str(Path(__file__).resolve()),
-            "--server.port=8501"
-        ]
-        
-        logger.info(f"Running command: {' '.join(cmd)}")
-        print(f"\nIf automatic startup fails, run this command manually:")
-        print(f"{' '.join(cmd)}\n")
-        
-        subprocess.Popen(cmd)
-    
-    except Exception as e:
-        logger.error(f"Error starting Streamlit app: {e}")
-        print(f"\nPlease start the app manually with:")
-        print(f"streamlit run {Path(__file__).resolve()} --server.port=8501\n")
-    
-    finally:
-        # Restore original sys.argv
-        sys.argv = original_argv
+    # Navigate to the selected page
+    if selected_page == "Home":
+        show_home_page()
+    elif selected_page == "Predictions":
+        show_predictions_page()
+    elif selected_page == "Data Management":
+        from ui.data_manager import show_data_management_page
+        show_data_management_page()
+    elif selected_page == "Model Management":
+        from ui.model_manager import show_model_management_page
+        show_model_management_page()
+    elif selected_page == "Evaluation":
+        from ui.evaluation import show_evaluation_page
+        show_evaluation_page()
+    elif selected_page == "System Status":
+        show_system_status_page()
+    elif selected_page == "Dependency Check":
+        show_verify_deps_page()
 
 # If this script is run directly, start Streamlit
 if __name__ == "__main__":

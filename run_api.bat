@@ -1,6 +1,10 @@
 @echo off
 echo Starting Soccer Prediction API Server with Python 3.11...
 
+REM Set environment variables
+set API_PORT=8000
+set HOST=0.0.0.0
+
 REM Activate the Python 3.11 environment if it exists
 if exist api_env\Scripts\activate.bat (
     call api_env\Scripts\activate.bat

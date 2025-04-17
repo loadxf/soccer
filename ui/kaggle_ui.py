@@ -7,7 +7,32 @@ This module provides Streamlit UI components for Kaggle integration.
 import streamlit as st
 import sys
 import os
+import json
 from pathlib import Path
+
+# Set explicit Kaggle credentials path for Docker environment
+if os.path.exists("/root/.kaggle/kaggle.json"):
+    os.environ["KAGGLE_CONFIG_DIR"] = "/root/.kaggle"
+    # Also load credentials as environment variables
+    try:
+        with open("/root/.kaggle/kaggle.json", "r") as f:
+            creds = json.load(f)
+            os.environ["KAGGLE_USERNAME"] = creds.get("username", "")
+            os.environ["KAGGLE_KEY"] = creds.get("key", "")
+        print("Loaded Kaggle credentials from /root/.kaggle/kaggle.json")
+    except Exception as e:
+        print(f"Error loading Kaggle credentials: {e}")
+elif os.path.exists(os.path.expanduser("~/.kaggle/kaggle.json")):
+    os.environ["KAGGLE_CONFIG_DIR"] = os.path.expanduser("~/.kaggle")
+    # Also load credentials as environment variables
+    try:
+        with open(os.path.expanduser("~/.kaggle/kaggle.json"), "r") as f:
+            creds = json.load(f)
+            os.environ["KAGGLE_USERNAME"] = creds.get("username", "")
+            os.environ["KAGGLE_KEY"] = creds.get("key", "")
+        print(f"Loaded Kaggle credentials from {os.path.expanduser('~/.kaggle/kaggle.json')}")
+    except Exception as e:
+        print(f"Error loading Kaggle credentials: {e}")
 
 # Add the project root to sys.path if needed
 script_dir = Path(__file__).resolve().parent  # ui directory
@@ -190,14 +215,17 @@ def import_kaggle_dataset(dataset_ref):
                     "path": result['path'],
                     "files": result['files']
                 })
-                return True
+                return {
+                    "status": "success",
+                    "registry_result": result.get('path')
+                }
             else:
                 st.error(f"Error importing dataset: {result['message']}")
-                return False
+                return {"status": "error", "message": result['message']}
         
         except Exception as e:
             st.error(f"Error importing dataset: {str(e)}")
-            return False
+            return {"status": "error", "message": str(e)}
 
 def verify_kaggle_setup():
     """Test Kaggle authentication and display the result."""

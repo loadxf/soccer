@@ -31,13 +31,13 @@ except ImportError:
     # Fallback configuration if api_config.py doesn't exist
     logger.warning("Could not import api_config, using default configuration")
     API_HOST = "0.0.0.0"  # Listen on all interfaces
-    API_PORT = 8080
+    API_PORT = int(os.environ.get('API_PORT', 8000))
     API_VERSION = "v1"
     CORS_ORIGINS = [
         "http://localhost:8501",
         "http://127.0.0.1:8501",
-        "http://localhost:8080",
-        "http://127.0.0.1:8080",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
         "*"  # Allow all origins
     ]
     API_TITLE = "Soccer Prediction System API"
@@ -122,6 +122,18 @@ async def add_cors_headers(request: Request, call_next):
             }
         )
 
+# Simple root health check
+@app.get("/health", tags=["Health"])
+async def root_health_check():
+    """Simple root health check."""
+    return {
+        "status": "ok",
+        "api": "up",
+        "database": "unknown",
+        "models": "unknown",
+        "version": API_VERSION
+    }
+
 # Health check endpoint
 @app.get(f"{API_PREFIX}/health", tags=["Health"])
 async def health_check():
@@ -174,7 +186,7 @@ async def get_prediction_models():
 
 if __name__ == "__main__":
     logger.info(f"Starting standalone API server at http://{API_HOST}:{API_PORT}")
-    logger.info(f"API documentation: http://{API_HOST}:{API_PORT}{API_PREFIX}/docs")
+    logger.info(f"API documentation: http://localhost:{API_PORT}{API_PREFIX}/docs")
     try:
         uvicorn.run(app, host=API_HOST, port=API_PORT)
     except Exception as e:

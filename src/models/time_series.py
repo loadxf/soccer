@@ -230,7 +230,7 @@ class TimeSeriesPredictor:
         else:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def _create_lstm_model(self, input_shape: Tuple, output_shape: int) -> tf.keras.Model:
+    def _create_lstm_model(self, input_shape: Tuple, output_shape: int) -> Any:
         """
         Create an LSTM model for time-series forecasting.
         
@@ -264,7 +264,7 @@ class TimeSeriesPredictor:
         
         return model
 
-    def _create_gru_model(self, input_shape: Tuple, output_shape: int) -> tf.keras.Model:
+    def _create_gru_model(self, input_shape: Tuple, output_shape: int) -> Any:
         """
         Create a GRU model for time-series forecasting.
         
@@ -298,7 +298,7 @@ class TimeSeriesPredictor:
         
         return model
 
-    def _create_encoder_decoder_model(self, input_shape: Tuple, output_shape: int) -> tf.keras.Model:
+    def _create_encoder_decoder_model(self, input_shape: Tuple, output_shape: int) -> Any:
         """
         Create an encoder-decoder model for time-series forecasting.
         
