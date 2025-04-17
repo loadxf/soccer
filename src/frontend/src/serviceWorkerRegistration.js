@@ -7,7 +7,7 @@
 // existing tabs open on the page have been closed, since previously cached
 // resources are updated in the background.
 
-const is127.0.0.1 = Boolean(
+const isLocalhost = Boolean(
   window.location.hostname === '127.0.0.1' ||
     // [::1] is the IPv6 127.0.0.1 address.
     window.location.hostname === '[::1]' ||
@@ -40,7 +40,7 @@ export function register(config) {
           window.apiConnected = isConnected;
           console.log(`API connectivity check: ${isConnected ? 'Connected' : 'Disconnected'}`);
           
-          if (is127.0.0.1) {
+          if (isLocalhost) {
             // This is running on 127.0.0.1. Let's check if a service worker still exists or not.
             checkValidServiceWorker(swUrl, config);
 
@@ -60,7 +60,7 @@ export function register(config) {
         .catch(error => {
           console.error('Error checking API connectivity:', error);
           // Continue with service worker registration even if API check fails
-          if (is127.0.0.1) {
+          if (isLocalhost) {
             checkValidServiceWorker(swUrl, config);
           } else {
             registerValidSW(swUrl, config);

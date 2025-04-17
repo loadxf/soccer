@@ -33,7 +33,6 @@ import {
   Cloud
 } from '@mui/icons-material';
 import useAuth from '../hooks/useAuth';
-import SportsIcon from '@mui/icons-material/Sports';
 
 const Layout = ({ apiStatus }) => {
   const { user, logout, isAdmin } = useAuth();

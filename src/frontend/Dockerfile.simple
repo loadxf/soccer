@@ -7,19 +7,24 @@ RUN apk add --update nodejs npm
 # Set working directory
 WORKDIR /app
 
-# Copy application files
-COPY . .
+# Copy package files first for better layer caching
+COPY package.json package-lock.json* ./
 
 # Install dependencies
 RUN npm install
 
+# Copy application files
+COPY . .
+
 # Set environment variables
 ENV REACT_APP_ENVIRONMENT=docker
-ENV REACT_APP_API_URL=http://app:8000
+# Use host-based API URL instead of container name
+ENV REACT_APP_API_URL=''
 ENV REACT_APP_ENABLE_SERVICE_WORKER=true
 ENV NODE_ENV=production
+ENV CI=false
 
-# Build the application
+# Build the application (CI=false prevents treating warnings as errors)
 RUN npm run build
 
 # Copy custom nginx config
