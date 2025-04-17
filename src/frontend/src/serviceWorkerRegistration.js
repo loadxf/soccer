@@ -18,6 +18,8 @@ const isLocalhost = Boolean(
 // Global variable to track API connection status
 window.apiConnected = false;
 
+const serviceWorkerConfig = {};  // Add proper initialization
+
 export function register(config) {
   // Only register if enabled in environment and browser supports service workers
   if ((process.env.NODE_ENV === 'production' || process.env.REACT_APP_ENABLE_SERVICE_WORKER === 'true') && 

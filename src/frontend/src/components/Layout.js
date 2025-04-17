@@ -23,7 +23,7 @@ import {
 import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
-  SportsSoccer as SportsIcon,
+  SportsSoccer as SoccerIcon,
   Groups as TeamsIcon,
   ShowChart as PredictionsIcon,
   Equalizer as VisualizationsIcon,
@@ -86,7 +86,7 @@ const Layout = ({ apiStatus }) => {
     },
     { 
       text: 'Matches', 
-      icon: <SportsIcon />, 
+      icon: <SoccerIcon />, 
       path: '/matches',
       active: location.pathname === '/matches'
     },
@@ -110,7 +110,7 @@ const Layout = ({ apiStatus }) => {
     },
     { 
       text: 'Interactive Demo', 
-      icon: <SportsIcon />, 
+      icon: <SoccerIcon />, 
       path: '/demo',
       active: location.pathname === '/demo'
     }

@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   # Override the database configuration
   db:
@@ -36,6 +34,9 @@ services:
         
   # Add dependency to ensure the frontend waits for the API
   frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile.simple
     restart: on-failure
     depends_on:
       app:
