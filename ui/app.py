@@ -694,6 +694,62 @@ def main():
     elif selected_page == "Dependency Check":
         show_verify_deps_page()
 
+# Function to show the system status page
+def show_system_status_page():
+    """Display the system status page with health and performance metrics"""
+    st.title("System Status")
+    
+    # Display system health information
+    st.header("System Health")
+    
+    # Always show debug info on the status page
+    DEBUG = True
+    show_debug_info()
+    DEBUG = safe_get_session('DEBUG', False)  # Restore original debug setting
+
+# Application startup function
+def start_app():
+    """Initialize the application and start the main function"""
+    # Initialize API connection and session state
+    try:
+        check_api_health_with_retries()
+    except Exception as e:
+        print(f"Failed to check API health: {str(e)}")
+    
+    # Run the main application
+    main()
+
 # If this script is run directly, start Streamlit
 if __name__ == "__main__":
     start_app()
+
+# Function to show the home page
+def show_home_page():
+    """Display the home page with overview and recent matches"""
+    st.title("Soccer Prediction System - Home")
+    
+    # Check if we're using fallback data
+    if safe_get_session('using_fallback', False):
+        show_fallback_notification()
+    
+    # Display page content
+    st.header("Recent Matches")
+    
+    # Show debug info if in debug mode
+    show_debug_info()
+
+# Function to show the predictions page
+def show_predictions_page():
+    """Display the predictions page with match prediction functionality"""
+    st.title("Soccer Predictions")
+    
+    # Check if we're using fallback data
+    if safe_get_session('using_fallback', False):
+        show_fallback_notification()
+    
+    # Display page content
+    st.header("Make a Prediction")
+    st.write("Select teams and parameters to generate a match prediction.")
+    
+    # Show debug info if in debug mode
+    show_debug_info()
