@@ -18,6 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     rng-tools \
     haveged \
+    curl \
+    wget \
+    iputils-ping \
+    dnsutils \
     && rm -rf /var/lib/apt/lists/*
 
 # Configure haveged to provide additional entropy

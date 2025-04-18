@@ -665,64 +665,6 @@ def show_verify_deps_page():
     import ui.verify_deps
     # This imports and runs the verify_deps.py script
 
-# Main navigation handler
-def main():
-    """Main navigation handler"""
-    
-    # Create the sidebar
-    selected_page = create_sidebar()
-    
-    # Suppress browser warnings
-    suppress_browser_warnings()
-    
-    # Navigate to the selected page
-    if selected_page == "Home":
-        show_home_page()
-    elif selected_page == "Predictions":
-        show_predictions_page()
-    elif selected_page == "Data Management":
-        from ui.data_manager import show_data_management_page
-        show_data_management_page()
-    elif selected_page == "Model Management":
-        from ui.model_manager import show_model_management_page
-        show_model_management_page()
-    elif selected_page == "Evaluation":
-        from ui.evaluation import show_evaluation_page
-        show_evaluation_page()
-    elif selected_page == "System Status":
-        show_system_status_page()
-    elif selected_page == "Dependency Check":
-        show_verify_deps_page()
-
-# Function to show the system status page
-def show_system_status_page():
-    """Display the system status page with health and performance metrics"""
-    st.title("System Status")
-    
-    # Display system health information
-    st.header("System Health")
-    
-    # Always show debug info on the status page
-    DEBUG = True
-    show_debug_info()
-    DEBUG = safe_get_session('DEBUG', False)  # Restore original debug setting
-
-# Application startup function
-def start_app():
-    """Initialize the application and start the main function"""
-    # Initialize API connection and session state
-    try:
-        check_api_health_with_retries()
-    except Exception as e:
-        print(f"Failed to check API health: {str(e)}")
-    
-    # Run the main application
-    main()
-
-# If this script is run directly, start Streamlit
-if __name__ == "__main__":
-    start_app()
-
 # Function to show the home page
 def show_home_page():
     """Display the home page with overview and recent matches"""
@@ -753,3 +695,61 @@ def show_predictions_page():
     
     # Show debug info if in debug mode
     show_debug_info()
+
+# Function to show the system status page
+def show_system_status_page():
+    """Display the system status page with health and performance metrics"""
+    st.title("System Status")
+    
+    # Display system health information
+    st.header("System Health")
+    
+    # Always show debug info on the status page
+    DEBUG = True
+    show_debug_info()
+    DEBUG = safe_get_session('DEBUG', False)  # Restore original debug setting
+
+# Main navigation handler
+def main():
+    """Main navigation handler"""
+    
+    # Create the sidebar
+    selected_page = create_sidebar()
+    
+    # Suppress browser warnings
+    suppress_browser_warnings()
+    
+    # Navigate to the selected page
+    if selected_page == "Home":
+        show_home_page()
+    elif selected_page == "Predictions":
+        show_predictions_page()
+    elif selected_page == "Data Management":
+        from ui.data_manager import show_data_management_page
+        show_data_management_page()
+    elif selected_page == "Model Management":
+        from ui.model_manager import show_model_management_page
+        show_model_management_page()
+    elif selected_page == "Evaluation":
+        from ui.evaluation import show_evaluation_page
+        show_evaluation_page()
+    elif selected_page == "System Status":
+        show_system_status_page()
+    elif selected_page == "Dependency Check":
+        show_verify_deps_page()
+
+# Application startup function
+def start_app():
+    """Initialize the application and start the main function"""
+    # Initialize API connection and session state
+    try:
+        check_api_health_with_retries()
+    except Exception as e:
+        print(f"Failed to check API health: {str(e)}")
+    
+    # Run the main application
+    main()
+
+# If this script is run directly, start Streamlit
+if __name__ == "__main__":
+    start_app()

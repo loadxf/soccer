@@ -33,11 +33,11 @@ services:
     networks:
       - soccer-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8000/health || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 5
-      start_period: 60s
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   frontend:
     build:
@@ -78,7 +78,8 @@ services:
       - uploads_data:/app/uploads  # Share uploads with app container
       - /dev/urandom:/dev/random:ro  # Add access to entropy source
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     command: bash -c "chmod +x /app/ui/start_app.sh && /app/ui/start_app.sh"
     environment:
       - STREAMLIT_SERVER_PORT=8501
@@ -90,6 +91,8 @@ services:
       - PYTHONUNBUFFERED=1
       - RANDOM_SEED=42  # Add fixed seed for any randomness
       - TF_DETERMINISTIC_OPS=1  # Make TensorFlow operations deterministic
+      - API_HOST=app
+      - API_PORT=8000
     restart: always
     networks:
       - soccer-net

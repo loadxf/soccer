@@ -117,6 +117,35 @@ docker-compose down
 docker-compose down -v
 ```
 
+## Docker Troubleshooting
+
+### Fix Networking Issues
+
+If containers can't communicate with each other, run the network fix script:
+
+```bash
+sudo ./fix-docker-network.sh
+```
+
+Then restart the Docker containers:
+
+```bash
+docker compose down
+docker compose up -d
+```
+
+### Fix Random Device Errors
+
+If you encounter errors related to "random_device could not be read" or entropy-related issues, run:
+
+```bash
+sudo ./fix-docker-random-device.sh
+```
+
+### Connection Retry Logic
+
+The UI container has been updated to wait for the API service to become available. If the API service isn't ready within 60 seconds, the UI will start in offline/fallback mode.
+
 ## Production Considerations
 
 For production deployment:
