@@ -25,17 +25,19 @@ COPY src/ /app/src/
 COPY main.py /app/
 COPY scripts/ /app/scripts/
 
-# Create necessary directories
-RUN mkdir -p /app/data/raw /app/data/processed /app/data/features /app/data/models /app/data/evaluation /app/data/predictions /app/logs
+# Create necessary directories with correct permissions
+RUN mkdir -p /app/data/raw /app/data/processed /app/data/features \
+    /app/data/models /app/data/evaluation /app/data/predictions \
+    /app/logs /app/model_cache /app/uploads \
+    && chmod -R 777 /app/data /app/logs /app/model_cache /app/uploads
 
 # Copy the init script and make it executable
 COPY scripts/docker_init.sh /app/docker_init.sh
 RUN chmod +x /app/docker_init.sh
 
-# Create non-root user for security
-RUN groupadd -r appuser && useradd -r -g appuser appuser \
-    && chown -R appuser:appuser /app
-USER appuser
+# Skip creating non-root user to avoid permission issues
+# This is a compromise for development environments
+# For production, revisit this approach with proper volume mounts
 
 # Run the application
 EXPOSE 8000

@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 import time
 from tqdm import tqdm
+import joblib
 
 # Import project utilities
 try:
@@ -42,6 +43,25 @@ DEFAULT_CONFIG = {
     "fill_missing": "mean",    # Strategy for handling missing values: mean, median, zero, none
     "min_matches_required": 3  # Minimum matches required for reliable form calculation
 }
+
+# Get data directories
+try:
+    from config.default_config import DATA_DIR
+    # Convert DATA_DIR to Path object if it's a string
+    if isinstance(DATA_DIR, str):
+        DATA_DIR = Path(DATA_DIR)
+except ImportError:
+    # Fallback default if config is not available
+    DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+
+# Define paths
+FEATURES_DIR = DATA_DIR / "features"
+PROCESSED_DIR = DATA_DIR / "processed"
+MODELS_DIR = DATA_DIR / "models"
+
+# Ensure directories exist
+os.makedirs(FEATURES_DIR, exist_ok=True)
+os.makedirs(PROCESSED_DIR, exist_ok=True)
 
 def validate_dataframe(
     df: pd.DataFrame, 
@@ -700,4 +720,117 @@ def generate_features_for_dataset(
     
     except Exception as e:
         logger.exception(f"Error generating features: {str(e)}")
-        return False, f"Error: {str(e)}" 
+        return False, f"Error: {str(e)}"
+
+def load_processed_data(dataset_name: str = "matches", version: str = "latest") -> pd.DataFrame:
+    """Load processed data from the processed directory."""
+    logger.info(f"Loading processed data: {dataset_name}, version: {version}")
+    
+    if version == "latest":
+        # Find the latest version
+        files = list(PROCESSED_DIR.glob(f"{dataset_name}_*.csv"))
+        if not files:
+            logger.error(f"No processed data found for {dataset_name}")
+            return pd.DataFrame()
+        
+        # Sort by modification time (newest first)
+        files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        file_path = files[0]
+    else:
+        file_path = PROCESSED_DIR / f"{dataset_name}_{version}.csv"
+    
+    logger.info(f"Loading data from {file_path}")
+    if not os.path.exists(file_path):
+        logger.error(f"File not found: {file_path}")
+        return pd.DataFrame()
+    
+    return pd.read_csv(file_path)
+
+def create_feature_datasets(processed_data: pd.DataFrame, features_config: Dict = None) -> Dict[str, pd.DataFrame]:
+    """Create feature datasets from processed data according to configuration."""
+    logger.info("Creating feature datasets")
+    
+    if features_config is None:
+        features_config = {
+            "basic": ["team_home", "team_away", "league", "season"],
+            "match_stats": ["home_goals", "away_goals", "home_shots", "away_shots"],
+            "form": ["home_form", "away_form", "home_wins_last5", "away_wins_last5"],
+        }
+    
+    feature_datasets = {}
+    
+    # Create datasets for each feature group
+    for group_name, columns in features_config.items():
+        # Filter only columns that exist in the data
+        valid_columns = [col for col in columns if col in processed_data.columns]
+        
+        if not valid_columns:
+            logger.warning(f"No valid columns found for group {group_name}")
+            continue
+            
+        # Create the dataset
+        feature_datasets[group_name] = processed_data[valid_columns].copy()
+        logger.info(f"Created feature group {group_name} with {len(valid_columns)} features")
+        
+    return feature_datasets
+
+def load_feature_pipeline(pipeline_name: str, version: str = "latest") -> Any:
+    """Load a feature transformation pipeline from disk."""
+    logger.info(f"Loading feature pipeline: {pipeline_name}, version: {version}")
+    
+    if version == "latest":
+        # Find the latest version
+        files = list(FEATURES_DIR.glob(f"pipeline_{pipeline_name}_*.joblib"))
+        if not files:
+            logger.warning(f"No pipeline found for {pipeline_name}, returning None")
+            return None
+        
+        # Sort by modification time (newest first)
+        files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+        file_path = files[0]
+    else:
+        file_path = FEATURES_DIR / f"pipeline_{pipeline_name}_{version}.joblib"
+    
+    logger.info(f"Loading pipeline from {file_path}")
+    if not os.path.exists(file_path):
+        logger.error(f"Pipeline file not found: {file_path}")
+        return None
+    
+    try:
+        return joblib.load(file_path)
+    except Exception as e:
+        logger.error(f"Error loading pipeline: {e}")
+        return None
+
+def apply_feature_pipeline(data: pd.DataFrame, pipeline_name: str, version: str = "latest") -> pd.DataFrame:
+    """Apply a feature transformation pipeline to data."""
+    logger.info(f"Applying feature pipeline {pipeline_name} to data of shape {data.shape}")
+    
+    pipeline = load_feature_pipeline(pipeline_name, version)
+    if pipeline is None:
+        logger.warning("Pipeline not found, returning original data")
+        return data
+    
+    try:
+        transformed_data = pipeline.transform(data)
+        logger.info(f"Data transformed successfully, new shape: {transformed_data.shape}")
+        return transformed_data
+    except Exception as e:
+        logger.error(f"Error applying pipeline: {e}")
+        return data
+
+def save_feature_dataset(data: pd.DataFrame, name: str, version: str = None) -> str:
+    """Save a feature dataset to disk."""
+    if version is None:
+        version = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    
+    file_path = FEATURES_DIR / f"{name}_{version}.csv"
+    logger.info(f"Saving feature dataset to {file_path}")
+    
+    try:
+        data.to_csv(file_path, index=False)
+        logger.info(f"Dataset saved successfully: {file_path}")
+        return str(file_path)
+    except Exception as e:
+        logger.error(f"Error saving dataset: {e}")
+        return "" 
