@@ -6,8 +6,5 @@ module.exports = {
   swDest: 'build/serviceWorker.js',
   swSrc: 'public/serviceWorker.js',
   maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5MB
-  dontCacheBustURLsMatching: [
-    /^utm_/,
-    /^fbclid$/
-  ]
+  dontCacheBustURLsMatching: /^[^?]*\.\w{8}\./
 }; 
