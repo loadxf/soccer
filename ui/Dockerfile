@@ -13,6 +13,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
+    rng-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy only requirements first for better layer caching
@@ -43,6 +44,10 @@ if [ -f /root/.kaggle/kaggle.json ]; then\n\
   echo "Kaggle credentials loaded from /root/.kaggle/kaggle.json"\n\
 fi\n\
 export PYTHONPATH=/app:/app/src\n\
+# Start the rng daemon to help with entropy\n\
+if command -v rngd &> /dev/null; then\n\
+  rngd -r /dev/urandom || echo "Unable to start rngd, continuing anyway"\n\
+fi\n\
 streamlit run /app/ui/app.py --server.port=8501 --server.address=0.0.0.0' > /app/start.sh && \
 chmod +x /app/start.sh
 
