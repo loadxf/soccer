@@ -79,7 +79,7 @@ services:
       - /dev/urandom:/dev/random:ro  # Add access to entropy source
     depends_on:
       - app
-    command: bash -c "python /app/scripts/verify_all_dependencies.py && python /app/scripts/verify_tensorflow.py && streamlit run /app/ui/app.py --server.port=8501 --server.address=0.0.0.0 --browser.serverAddress=$(hostname -I | awk '{print $1}')"
+    command: bash -c "chmod +x /app/ui/start_app.sh && /app/ui/start_app.sh"
     environment:
       - STREAMLIT_SERVER_PORT=8501
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
@@ -87,6 +87,9 @@ services:
       - STREAMLIT_SERVER_ENABLE_CORS=true
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
       - PYTHONHASHSEED=0  # Add fixed hash seed for reproducibility and to help with entropy issues
+      - PYTHONUNBUFFERED=1
+      - RANDOM_SEED=42  # Add fixed seed for any randomness
+      - TF_DETERMINISTIC_OPS=1  # Make TensorFlow operations deterministic
     restart: always
     networks:
       - soccer-net
